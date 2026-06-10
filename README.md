@@ -11,6 +11,8 @@ Menu bar gauge for your Cursor token usage and spend — inspired by
   menu bar gauge.**
 - Below that, a **per-model breakdown** for the selected period: cost,
   input+output tokens, and cache tokens.
+- Optional **spend ceilings** per period, just for visibility: the menu bar
+  shows `$237/$250` and turns orange at 70% and red at 90% of the ceiling.
 - Refreshes every 5 minutes (SwiftBar filename convention) plus a manual
   "Refresh now" entry.
 
@@ -53,6 +55,21 @@ it).
 > **Note:** the endpoint is internal to Cursor's dashboard and undocumented,
 > so a future Cursor change may require a small fix here.
 
+## Spend ceilings (optional)
+
+To set a dollar ceiling per period — purely visual, nothing is enforced —
+create `~/.config/cursor-quota/limits` with one `<period> <dollars>` per line
+(`#` comments allowed):
+
+```
+daily 250
+weekly 1000
+monthly 2000
+```
+
+Periods with a ceiling show `$X.XX/$LIMIT` in the menu bar and `N% of $LIMIT`
+in the dropdown, colored orange at ≥70% and red at ≥90%.
+
 ## Manual token (fallback)
 
 If auto-detection fails (e.g. you don't run the Cursor app on this machine),
@@ -68,6 +85,7 @@ put a token in `~/.config/cursor-quota/token` — either:
 | Path | Purpose |
 | --- | --- |
 | `~/.config/cursor-quota/period` | Selected menu bar period (`daily`, `weekly`, `monthly`, `6months`, `1year`) |
+| `~/.config/cursor-quota/limits` | Optional spend ceilings per period (visibility only) |
 | `~/.config/cursor-quota/token` | Optional manual token override |
 
 ## Troubleshooting

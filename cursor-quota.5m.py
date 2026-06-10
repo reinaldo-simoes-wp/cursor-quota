@@ -36,6 +36,7 @@ STATE_DB = os.path.expanduser(
 CONFIG_DIR = os.path.expanduser("~/.config/cursor-quota")
 PERIOD_FILE = os.path.join(CONFIG_DIR, "period")
 TOKEN_FILE = os.path.join(CONFIG_DIR, "token")
+LIMITS_FILE = os.path.join(CONFIG_DIR, "limits")
 
 DAY_MS = 86_400_000
 # key -> (label, window length in days)
@@ -65,6 +66,34 @@ def write_period(key):
     os.makedirs(CONFIG_DIR, exist_ok=True)
     with open(PERIOD_FILE, "w") as f:
         f.write(key)
+
+
+def read_limits():
+    """Optional spend ceilings for visibility, one '<period> <dollars>' per
+    line in ~/.config/cursor-quota/limits, e.g. 'daily 250'. '#' comments ok."""
+    limits = {}
+    try:
+        with open(LIMITS_FILE) as f:
+            for raw in f:
+                parts = raw.split("#")[0].split()
+                if len(parts) >= 2 and parts[0] in PERIODS:
+                    try:
+                        dollars = float(parts[1].lstrip("$").replace(",", ""))
+                    except ValueError:
+                        continue
+                    if dollars > 0:
+                        limits[parts[0]] = dollars
+    except OSError:
+        pass
+    return limits
+
+
+def limit_color(pct):
+    if pct >= 90:
+        return "red"
+    if pct >= 70:
+        return "orange"
+    return None
 
 
 # --- auth ----------------------------------------------------------------
@@ -295,11 +324,22 @@ def main():
             except Exception as e:
                 errors[key] = str(e)
 
+    limits = read_limits()
+
     # Menu bar line.
     label = PERIODS[selected][0]
     if selected in results:
         d = results[selected]
-        print(f"{fmt_cost(d.get('totalCostCents') or 0)} · {fmt_tokens(io_tokens(d))}")
+        cost_cents = d.get("totalCostCents") or 0
+        cost = fmt_cost(cost_cents)
+        limit = limits.get(selected)
+        params = {}
+        if limit:
+            cost = f"{cost}/${limit:,.0f}"
+            color = limit_color(cost_cents / limit)
+            if color:
+                params["color"] = color
+        line(f"{cost} · {fmt_tokens(io_tokens(d))}", **params)
     else:
         print("⚠ Cursor")
     print("---")
@@ -309,12 +349,21 @@ def main():
     # Period rows (click to select).
     for key, (name, _) in PERIODS.items():
         mark = "✓ " if key == selected else "   "
+        params = {}
         if key in results:
             d = results[key]
+            cost_cents = d.get("totalCostCents") or 0
             text = (
-                f"{mark}{name}: {fmt_cost(d.get('totalCostCents') or 0)}"
+                f"{mark}{name}: {fmt_cost(cost_cents)}"
                 f" · {fmt_tokens(io_tokens(d))} tokens"
             )
+            limit = limits.get(key)
+            if limit:
+                pct = cost_cents / limit
+                text += f" · {pct:.0f}% of ${limit:,.0f}"
+                color = limit_color(pct)
+                if color:
+                    params["color"] = color
         else:
             text = f"{mark}{name}: ⚠ {errors.get(key, 'no data')}"
         line(
@@ -323,6 +372,7 @@ def main():
             param1="--set-period",
             param2=key,
             terminal="false",
+            **params,
         )
 
     # Per-model breakdown for the selected period.
