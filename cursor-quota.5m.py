@@ -26,6 +26,9 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
+VERSION = "1.0.0"
+REPO_URL = "https://github.com/reinaldo-simoes-wp/cursor-quota"
+
 API_URL = "https://cursor.com/api/dashboard/get-aggregated-usage-events"
 STATE_DB = os.path.expanduser(
     "~/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
@@ -340,6 +343,16 @@ def main():
     print("---")
     line("Refresh now", refresh="true")
     line("Open Cursor dashboard", href="https://cursor.com/dashboard/usage")
+    print("About")
+    line(f"-- cursor-quota v{VERSION}", size=12)
+    line("-- Token usage & spend for Cursor, in your menu bar", size=11)
+    line("-- Inspired by claude-quota", size=11)
+    print("-----")
+    line("-- GitHub", href=REPO_URL)
+    line("-- Report an issue", href=f"{REPO_URL}/issues")
+    print("-----")
+    line("-- Uses Cursor's undocumented dashboard API — may break without notice", size=11)
+    line("-- Reads your Cursor login token locally (read-only); nothing leaves your Mac except calls to cursor.com", size=11)
 
 
 if __name__ == "__main__":
