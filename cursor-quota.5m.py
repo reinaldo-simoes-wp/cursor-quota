@@ -9,7 +9,14 @@ you're logged in to the Cursor app. Manual fallback: put your
 WorkosCursorSessionToken cookie value (or just the JWT) in
 ~/.config/cursor-quota/token.
 
-<swiftbar.title>cursor-quota</swiftbar.title>
+<xbar.title>cursor-quota</xbar.title>
+<xbar.version>v1.0.0</xbar.version>
+<xbar.author>Reinaldo Simoes</xbar.author>
+<xbar.author.github>reinaldo-simoes-wp</xbar.author.github>
+<xbar.desc>Cursor token usage and spend in your menu bar: per-period cost/tokens with a per-model breakdown, read straight from your local Cursor session.</xbar.desc>
+<xbar.dependencies>python3</xbar.dependencies>
+<xbar.abouturl>https://github.com/reinaldo-simoes-wp/cursor-quota</xbar.abouturl>
+
 <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
 <swiftbar.hideSwiftBar>true</swiftbar.hideSwiftBar>
 """
