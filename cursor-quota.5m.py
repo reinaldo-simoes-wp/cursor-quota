@@ -252,6 +252,19 @@ def main():
     if len(sys.argv) >= 3 and sys.argv[1] == "--set-period":
         if sys.argv[2] in PERIODS:
             write_period(sys.argv[2])
+            # Refresh only after the period file is written; a refresh=true
+            # on the menu item would race with this write and read the old
+            # period (requiring a second click).
+            import subprocess
+
+            subprocess.run(
+                [
+                    "open",
+                    "-g",
+                    f"swiftbar://refreshplugin?name={os.path.basename(__file__)}",
+                ],
+                check=False,
+            )
         return
 
     selected = read_period()
@@ -310,7 +323,6 @@ def main():
             param1="--set-period",
             param2=key,
             terminal="false",
-            refresh="true",
         )
 
     # Per-model breakdown for the selected period.
