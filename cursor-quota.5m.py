@@ -96,24 +96,89 @@ def write_scope(key):
         f.write(key)
 
 
+# Preset ceilings scale with the period; team scope doubles them.
+LIMIT_PRESETS = {
+    "daily": (25, 50, 100, 250, 500, 1000),
+    "weekly": (100, 250, 500, 1000, 2500, 5000),
+    "monthly": (500, 1000, 2500, 5000, 10000, 25000),
+    "6months": (2500, 5000, 10000, 25000, 50000, 75000),
+    "1year": (5000, 10000, 25000, 50000, 75000, 100000),
+}
+
+
+def limit_presets(scope, period):
+    base = LIMIT_PRESETS[period]
+    return tuple(v * 2 for v in base) if scope == "team" else base
+
+
+def parse_dollars(s):
+    try:
+        v = float(s.lstrip("$").replace(",", ""))
+        return v if v > 0 else None
+    except ValueError:
+        return None
+
+
 def read_limits():
-    """Optional spend ceilings for visibility, one '<period> <dollars>' per
-    line in ~/.config/cursor-quota/limits, e.g. 'daily 250'. '#' comments ok."""
+    """Optional spend ceilings for visibility, one '<scope> <period> <dollars>'
+    per line in ~/.config/cursor-quota/limits, e.g. 'you daily 250'. Legacy
+    '<period> <dollars>' lines count as scope 'you'. '#' comments ok."""
     limits = {}
     try:
         with open(LIMITS_FILE) as f:
             for raw in f:
                 parts = raw.split("#")[0].split()
-                if len(parts) >= 2 and parts[0] in PERIODS:
-                    try:
-                        dollars = float(parts[1].lstrip("$").replace(",", ""))
-                    except ValueError:
-                        continue
-                    if dollars > 0:
-                        limits[parts[0]] = dollars
+                if len(parts) >= 3 and parts[0] in SCOPES and parts[1] in PERIODS:
+                    dollars = parse_dollars(parts[2])
+                    if dollars:
+                        limits[(parts[0], parts[1])] = dollars
+                elif len(parts) >= 2 and parts[0] in PERIODS:
+                    dollars = parse_dollars(parts[1])
+                    if dollars:
+                        limits[("you", parts[0])] = dollars
     except OSError:
         pass
     return limits
+
+
+def is_limit_line(raw):
+    parts = raw.split("#")[0].split()
+    return (len(parts) >= 3 and parts[0] in SCOPES and parts[1] in PERIODS) or (
+        len(parts) >= 2 and parts[0] in PERIODS
+    )
+
+
+def write_limits(limits):
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    # Keep the user's comments and unrecognized lines; rewrite only the
+    # recognized limit entries (in canonical '<scope> <period> <dollars>'
+    # form). Write atomically so a crash can't truncate the file.
+    kept = []
+    try:
+        with open(LIMITS_FILE) as f:
+            kept = [ln.rstrip("\n") for ln in f if ln.strip() and not is_limit_line(ln)]
+    except OSError:
+        pass
+    tmp = LIMITS_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        for ln in kept:
+            f.write(ln + "\n")
+        for (scope, period), dollars in sorted(limits.items()):
+            f.write(f"{scope} {period} {dollars:g}\n")
+    os.replace(tmp, LIMITS_FILE)
+
+
+def set_limit(scope, period, action):
+    """action: 'off' or a dollar amount."""
+    limits = read_limits()
+    key = (scope, period)
+    if action == "off":
+        limits.pop(key, None)
+    else:
+        dollars = parse_dollars(action)
+        if dollars:
+            limits[key] = dollars
+    write_limits(limits)
 
 
 def limit_color(pct):
@@ -364,6 +429,11 @@ def main():
             write_scope(sys.argv[2])
             trigger_refresh()
         return
+    if len(sys.argv) >= 5 and sys.argv[1] == "--set-limit":
+        if sys.argv[2] in SCOPES and sys.argv[3] in PERIODS:
+            set_limit(sys.argv[2], sys.argv[3], sys.argv[4])
+            trigger_refresh()
+        return
 
     selected = read_period()
     plugin = os.path.realpath(__file__)
@@ -415,7 +485,7 @@ def main():
         d = results[selected]
         cost_cents = d.get("totalCostCents") or 0
         cost = fmt_cost(cost_cents)
-        limit = limits.get(selected)
+        limit = limits.get((scope, selected))
         params = {}
         if limit:
             cost = f"{cost}/${limit:,.0f}"
@@ -456,7 +526,7 @@ def main():
                 f"{mark}{name}: {fmt_cost(cost_cents)}"
                 f" · {fmt_tokens(io_tokens(d))} tokens"
             )
-            limit = limits.get(key)
+            limit = limits.get((scope, key))
             if limit:
                 pct = cost_cents / limit
                 text += f" · {pct:.0f}% of ${limit:,.0f}"
@@ -500,6 +570,37 @@ def main():
             d.get("totalCacheWriteTokens") or 0
         )
         line(f"Cache tokens ({label.lower()}): {fmt_tokens(cache_total)}", size=11)
+
+    # Limits editor: SwiftBar has no real sliders, so each scope+period gets
+    # a submenu with Off / − / + steppers and preset amounts.
+    print("---")
+    print("Limits")
+    scope_rows = [("you", "You")]
+    if who["is_admin"] and who["team_id"]:
+        scope_rows.append(("team", f"Team ({who['team_name']})"))
+    for scope_key, scope_name in scope_rows:
+        for period_key, (period_name, _) in PERIODS.items():
+            current = limits.get((scope_key, period_key))
+            shown = f"${current:,.0f}" if current else "off"
+            print(f"-- {scope_name} · {period_name}: {shown}")
+
+            def limit_row(text, action, depth="----"):
+                line(
+                    f"{depth} {text}",
+                    bash=plugin,
+                    param1="--set-limit",
+                    param2=scope_key,
+                    param3=period_key,
+                    param4=action,
+                    terminal="false",
+                )
+
+            if current:
+                limit_row("Off", "off")
+                print("-------")
+            for preset in limit_presets(scope_key, period_key):
+                mark = "✓ " if current == preset else ""
+                limit_row(f"{mark}${preset:,.0f}", str(preset))
 
     print("---")
     line("Refresh now", refresh="true")

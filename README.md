@@ -65,18 +65,28 @@ it).
 
 ## Spend ceilings (optional)
 
-To set a dollar ceiling per period — purely visual, nothing is enforced —
-create `~/.config/cursor-quota/limits` with one `<period> <dollars>` per line
-(`#` comments allowed):
-
-```
-daily 250
-weekly 1000
-monthly 2000
-```
+Dollar ceilings per period — purely visual, nothing is enforced. Set them from
+the **Limits** submenu in the dropdown: each scope+period has preset amounts
+scaled to the cadence (daily $25–$1k up to 1-year $5k–$100k; team presets are
+double) and an `Off` entry. Ceilings are kept **per scope**: `You` and — for
+team admins — `Team (name)` have independent values.
 
 Periods with a ceiling show `$X.XX/$LIMIT` in the menu bar and `N% of $LIMIT`
 in the dropdown, colored orange at ≥70% and red at ≥90%.
+
+Under the hood they live in `~/.config/cursor-quota/limits`, one
+`<scope> <period> <dollars>` per line (`#` comment lines allowed; legacy
+`<period> <dollars>` lines are read as scope `you`). Edit the file directly
+for custom amounts that aren't in the presets — they show up the same way.
+Picking a preset from the menu rewrites the recognized limit lines in
+canonical form (standalone comment lines are kept; inline `#` comments on
+limit lines are not):
+
+```
+you daily 375
+you weekly 1000
+team monthly 50000
+```
 
 ## Manual token (fallback)
 
@@ -94,7 +104,7 @@ put a token in `~/.config/cursor-quota/token` — either:
 | --- | --- |
 | `~/.config/cursor-quota/period` | Selected menu bar period (`daily`, `weekly`, `monthly`, `6months`, `1year`) |
 | `~/.config/cursor-quota/scope` | Selected scope (`you` or `team`; `team` is admins-only) |
-| `~/.config/cursor-quota/limits` | Optional spend ceilings per period (visibility only) |
+| `~/.config/cursor-quota/limits` | Optional spend ceilings per scope+period (visibility only, editable from the Limits submenu) |
 | `~/.config/cursor-quota/token` | Optional manual token override |
 
 ## Troubleshooting
