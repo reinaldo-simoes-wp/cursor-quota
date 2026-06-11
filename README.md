@@ -55,10 +55,13 @@ it).
 > **Note:** the endpoint is internal to Cursor's dashboard and undocumented,
 > so a future Cursor change may require a small fix here.
 
-> **Team admins:** the endpoint returns whatever your dashboard displays. If
-> you're a team admin, the dashboard shows **team usage** rather than "your
-> usage", so the gauges reflect the whole team's tokens and spend — not just
-> yours.
+> **Personal vs team usage:** the plugin always requests **your own usage**
+> explicitly (even for team admins, whose dashboard defaults to team-wide
+> data). Team admins additionally get a **Scope toggle** in the dropdown —
+> `You` vs `Team (TeamName)` — to flip the gauges between personal and
+> team-wide numbers. Members don't get the toggle because the API restricts
+> team-wide usage to admins. The dropdown header always says which scope is
+> shown: `Cursor usage (yours)` or `Cursor team usage (TeamName)`.
 
 ## Spend ceilings (optional)
 
@@ -90,6 +93,7 @@ put a token in `~/.config/cursor-quota/token` — either:
 | Path | Purpose |
 | --- | --- |
 | `~/.config/cursor-quota/period` | Selected menu bar period (`daily`, `weekly`, `monthly`, `6months`, `1year`) |
+| `~/.config/cursor-quota/scope` | Selected scope (`you` or `team`; `team` is admins-only) |
 | `~/.config/cursor-quota/limits` | Optional spend ceilings per period (visibility only) |
 | `~/.config/cursor-quota/token` | Optional manual token override |
 

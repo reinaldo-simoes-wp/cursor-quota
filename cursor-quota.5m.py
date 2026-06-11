@@ -37,11 +37,14 @@ VERSION = "1.0.0"
 REPO_URL = "https://github.com/reinaldo-simoes-wp/cursor-quota"
 
 API_URL = "https://cursor.com/api/dashboard/get-aggregated-usage-events"
+TEAMS_URL = "https://cursor.com/api/dashboard/teams"
+ME_URL = "https://cursor.com/api/dashboard/get-me"
 STATE_DB = os.path.expanduser(
     "~/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
 )
 CONFIG_DIR = os.path.expanduser("~/.config/cursor-quota")
 PERIOD_FILE = os.path.join(CONFIG_DIR, "period")
+SCOPE_FILE = os.path.join(CONFIG_DIR, "scope")
 TOKEN_FILE = os.path.join(CONFIG_DIR, "token")
 LIMITS_FILE = os.path.join(CONFIG_DIR, "limits")
 
@@ -55,6 +58,9 @@ PERIODS = {
     "1year": ("1 Year", 365),
 }
 DEFAULT_PERIOD = "daily"
+
+SCOPES = ("you", "team")
+DEFAULT_SCOPE = "you"
 
 
 # --- period selection ---------------------------------------------------
@@ -72,6 +78,21 @@ def read_period():
 def write_period(key):
     os.makedirs(CONFIG_DIR, exist_ok=True)
     with open(PERIOD_FILE, "w") as f:
+        f.write(key)
+
+
+def read_scope():
+    try:
+        with open(SCOPE_FILE) as f:
+            key = f.read().strip()
+        return key if key in SCOPES else DEFAULT_SCOPE
+    except OSError:
+        return DEFAULT_SCOPE
+
+
+def write_scope(key):
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    with open(SCOPE_FILE, "w") as f:
         f.write(key)
 
 
@@ -168,11 +189,10 @@ def session_cookie():
 # --- API -----------------------------------------------------------------
 
 
-def post_usage(cookie, start_ms, end_ms):
-    body = json.dumps({"startDate": str(start_ms), "endDate": str(end_ms)}).encode()
+def api_post(cookie, url, payload):
     req = urllib.request.Request(
-        API_URL,
-        data=body,
+        url,
+        data=json.dumps(payload).encode(),
         headers={
             "Content-Type": "application/json",
             "Origin": "https://cursor.com",
@@ -182,6 +202,44 @@ def post_usage(cookie, start_ms, end_ms):
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read())
+
+
+def post_usage(cookie, start_ms, end_ms, extras=None):
+    payload = {"startDate": str(start_ms), "endDate": str(end_ms)}
+    payload.update(extras or {})
+    return api_post(cookie, API_URL, payload)
+
+
+def identity(cookie):
+    """Who are we, and can we see team-wide usage? Team admins can query the
+    whole team; members are limited to their own usage by the API.
+
+    Raises TokenError when the numeric user id can't be determined: without
+    an explicit userId the API falls back to the dashboard default (team-wide
+    for admins), which would show team data under a personal label."""
+    try:
+        me = api_post(cookie, ME_URL, {})
+    except Exception as e:
+        raise TokenError(f"Could not fetch Cursor identity: {e}")
+    if not me.get("userId"):
+        raise TokenError("Cursor identity has no user id — API change?")
+
+    teams = []
+    try:
+        teams = api_post(cookie, TEAMS_URL, {}).get("teams") or []
+    except Exception:
+        pass
+    # Admin status must come from the team the dashboard is scoped to, not
+    # just any team the user belongs to.
+    team_id = me.get("teamId")
+    team = next((t for t in teams if t.get("id") == team_id), None)
+    role = (team or {}).get("role") or ""
+    return {
+        "user_id": me["userId"],
+        "team_id": team_id,
+        "team_name": (team or {}).get("name") or me.get("teamName") or "team",
+        "is_admin": "ADMIN" in role or "OWNER" in role,
+    }
 
 
 def merge_usage(a, b):
@@ -232,23 +290,23 @@ def split_boundary_ms(http_error, start_ms, end_ms):
     return max(inside) if inside else None
 
 
-def fetch_range(cookie, start_ms, end_ms, depth=0):
+def fetch_range(cookie, start_ms, end_ms, extras=None, depth=0):
     try:
-        return post_usage(cookie, start_ms, end_ms)
+        return post_usage(cookie, start_ms, end_ms, extras)
     except urllib.error.HTTPError as e:
         if e.code != 400 or depth >= 3:
             raise
         split = split_boundary_ms(e, start_ms, end_ms)
         if not split:
             raise
-        first = fetch_range(cookie, start_ms, split - 1, depth + 1)
-        second = fetch_range(cookie, split, end_ms, depth + 1)
+        first = fetch_range(cookie, start_ms, split - 1, extras, depth + 1)
+        second = fetch_range(cookie, split, end_ms, extras, depth + 1)
         return merge_usage(first, second)
 
 
-def fetch_usage(cookie, days):
+def fetch_usage(cookie, days, extras=None):
     now = int(time.time() * 1000)
-    return fetch_range(cookie, now - days * DAY_MS, now)
+    return fetch_range(cookie, now - days * DAY_MS, now, extras)
 
 
 # --- formatting ----------------------------------------------------------
@@ -284,23 +342,27 @@ def quote_param(v):
 # --- main ----------------------------------------------------------------
 
 
+def trigger_refresh():
+    # Refresh only after the config write; a refresh=true on the menu item
+    # would race with the write and read the old value (requiring two clicks).
+    import subprocess
+
+    subprocess.run(
+        ["open", "-g", f"swiftbar://refreshplugin?name={os.path.basename(__file__)}"],
+        check=False,
+    )
+
+
 def main():
     if len(sys.argv) >= 3 and sys.argv[1] == "--set-period":
         if sys.argv[2] in PERIODS:
             write_period(sys.argv[2])
-            # Refresh only after the period file is written; a refresh=true
-            # on the menu item would race with this write and read the old
-            # period (requiring a second click).
-            import subprocess
-
-            subprocess.run(
-                [
-                    "open",
-                    "-g",
-                    f"swiftbar://refreshplugin?name={os.path.basename(__file__)}",
-                ],
-                check=False,
-            )
+            trigger_refresh()
+        return
+    if len(sys.argv) >= 3 and sys.argv[1] == "--set-scope":
+        if sys.argv[2] in SCOPES:
+            write_scope(sys.argv[2])
+            trigger_refresh()
         return
 
     selected = read_period()
@@ -308,6 +370,7 @@ def main():
 
     try:
         cookie = session_cookie()
+        who = identity(cookie)
     except TokenError as e:
         print("⚠ Cursor")
         print("---")
@@ -315,10 +378,23 @@ def main():
         line("Refresh now", refresh="true")
         return
 
+    scope = read_scope()
+    # Team-wide data is admin-only; fall back to personal for members.
+    if scope == "team" and not (who["is_admin"] and who["team_id"]):
+        scope = "you"
+    if scope == "team":
+        extras = {"teamId": who["team_id"]}
+        header = f"Cursor team usage ({who['team_name']})"
+    else:
+        # Explicit userId guarantees personal usage even for admins, whose
+        # dashboard defaults to team-wide data.
+        extras = {"userId": who["user_id"]}
+        header = "Cursor usage (yours)"
+
     results, errors = {}, {}
     with ThreadPoolExecutor(max_workers=len(PERIODS)) as pool:
         futures = {
-            key: pool.submit(fetch_usage, cookie, days)
+            key: pool.submit(fetch_usage, cookie, days, extras)
             for key, (_, days) in PERIODS.items()
         }
         for key, fut in futures.items():
@@ -350,8 +426,24 @@ def main():
     else:
         print("⚠ Cursor")
     print("---")
-    print(f"Cursor usage — {label} | size=12")
+    print(f"{header} — {label} | size=12")
     print("---")
+
+    # Scope toggle (admins only — the API limits members to their own usage).
+    if who["is_admin"] and who["team_id"]:
+        for key, name in (
+            ("you", "You"),
+            ("team", f"Team ({who['team_name']})"),
+        ):
+            mark = "✓ " if key == scope else "   "
+            line(
+                f"{mark}Scope: {name}",
+                bash=plugin,
+                param1="--set-scope",
+                param2=key,
+                terminal="false",
+            )
+        print("---")
 
     # Period rows (click to select).
     for key, (name, _) in PERIODS.items():
