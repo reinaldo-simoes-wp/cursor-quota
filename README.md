@@ -55,6 +55,11 @@ it).
 > **Note:** the endpoint is internal to Cursor's dashboard and undocumented,
 > so a future Cursor change may require a small fix here.
 
+> **Team admins:** the endpoint returns whatever your dashboard displays. If
+> you're a team admin, the dashboard shows **team usage** rather than "your
+> usage", so the gauges reflect the whole team's tokens and spend — not just
+> yours.
+
 ## Spend ceilings (optional)
 
 To set a dollar ceiling per period — purely visual, nothing is enforced —
