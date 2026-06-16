@@ -45,6 +45,7 @@ STATE_DB = os.path.expanduser(
 CONFIG_DIR = os.path.expanduser("~/.config/cursor-quota")
 PERIOD_FILE = os.path.join(CONFIG_DIR, "period")
 SCOPE_FILE = os.path.join(CONFIG_DIR, "scope")
+DISPLAY_FILE = os.path.join(CONFIG_DIR, "display")
 TOKEN_FILE = os.path.join(CONFIG_DIR, "token")
 LIMITS_FILE = os.path.join(CONFIG_DIR, "limits")
 
@@ -61,6 +62,17 @@ DEFAULT_PERIOD = "daily"
 
 SCOPES = ("you", "team")
 DEFAULT_SCOPE = "you"
+
+# Menu bar display modes. Rates are the selected period's total divided by the
+# window duration (an average over the period).
+DISPLAYS = {
+    "total": "Total ($ \u00b7 tokens)",
+    "cost_hr": "$ / hour",
+    "cost_min": "$ / minute",
+    "tok_hr": "tokens / hour",
+    "tok_min": "tokens / minute",
+}
+DEFAULT_DISPLAY = "total"
 
 
 # --- period selection ---------------------------------------------------
@@ -93,6 +105,21 @@ def read_scope():
 def write_scope(key):
     os.makedirs(CONFIG_DIR, exist_ok=True)
     with open(SCOPE_FILE, "w") as f:
+        f.write(key)
+
+
+def read_display():
+    try:
+        with open(DISPLAY_FILE) as f:
+            key = f.read().strip()
+        return key if key in DISPLAYS else DEFAULT_DISPLAY
+    except OSError:
+        return DEFAULT_DISPLAY
+
+
+def write_display(key):
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    with open(DISPLAY_FILE, "w") as f:
         f.write(key)
 
 
@@ -390,8 +417,33 @@ def fmt_cost(cents):
     return f"${cents / 100:,.2f}"
 
 
+def fmt_rate_cost(dollars):
+    """Dollars per unit time; show more precision for small rates so a slow
+    burn doesn't collapse to $0.00."""
+    if dollars >= 1:
+        return f"${dollars:,.2f}"
+    if dollars >= 0.01:
+        return f"${dollars:.3f}"
+    return f"${dollars:.4f}"
+
+
 def io_tokens(d):
     return int(d.get("totalInputTokens") or 0) + int(d.get("totalOutputTokens") or 0)
+
+
+def rate_value(d, display, days):
+    """Menu bar text for a rate display mode, averaged over the period window."""
+    hours = days * 24
+    minutes = days * 1440
+    if display == "cost_hr":
+        return f"{fmt_rate_cost((d.get('totalCostCents') or 0) / 100 / hours)}/hr"
+    if display == "cost_min":
+        return f"{fmt_rate_cost((d.get('totalCostCents') or 0) / 100 / minutes)}/min"
+    if display == "tok_hr":
+        return f"{fmt_tokens(io_tokens(d) / hours)}/hr"
+    if display == "tok_min":
+        return f"{fmt_tokens(io_tokens(d) / minutes)}/min"
+    return None
 
 
 def line(text, **params):
@@ -427,6 +479,11 @@ def main():
     if len(sys.argv) >= 3 and sys.argv[1] == "--set-scope":
         if sys.argv[2] in SCOPES:
             write_scope(sys.argv[2])
+            trigger_refresh()
+        return
+    if len(sys.argv) >= 3 and sys.argv[1] == "--set-display":
+        if sys.argv[2] in DISPLAYS:
+            write_display(sys.argv[2])
             trigger_refresh()
         return
     if len(sys.argv) >= 5 and sys.argv[1] == "--set-limit":
@@ -478,25 +535,31 @@ def main():
                 errors[key] = str(e)
 
     limits = read_limits()
+    display = read_display()
 
     # Menu bar line.
-    label = PERIODS[selected][0]
+    label, days = PERIODS[selected]
     if selected in results:
         d = results[selected]
-        cost_cents = d.get("totalCostCents") or 0
-        cost = fmt_cost(cost_cents)
-        limit = limits.get((scope, selected))
         params = {}
-        if limit:
-            cost = f"{cost}/${limit:,.0f}"
-            color = limit_color(cost_cents / limit)
-            if color:
-                params["color"] = color
-        line(f"{cost} · {fmt_tokens(io_tokens(d))}", **params)
+        if display == "total":
+            cost_cents = d.get("totalCostCents") or 0
+            cost = fmt_cost(cost_cents)
+            limit = limits.get((scope, selected))
+            if limit:
+                cost = f"{cost}/${limit:,.0f}"
+                color = limit_color(cost_cents / limit)
+                if color:
+                    params["color"] = color
+            line(f"{cost} · {fmt_tokens(io_tokens(d))}", **params)
+        else:
+            # Rate modes: no limit comparison (limits are totals).
+            line(rate_value(d, display, days))
     else:
         print("⚠ Cursor")
     print("---")
-    print(f"{header} — {label} | size=12")
+    header_suffix = "" if display == "total" else f" · {DISPLAYS[display]}"
+    print(f"{header} — {label}{header_suffix} | size=12")
     print("---")
 
     # Scope toggle (admins only — the API limits members to their own usage).
@@ -514,6 +577,19 @@ def main():
                 terminal="false",
             )
         print("---")
+
+    # Display mode submenu (what the menu bar shows for the selected period).
+    print(f"Display: {DISPLAYS[display]}")
+    for key, name in DISPLAYS.items():
+        mark = "✓ " if key == display else ""
+        line(
+            f"-- {mark}{name}",
+            bash=plugin,
+            param1="--set-display",
+            param2=key,
+            terminal="false",
+        )
+    print("---")
 
     # Period rows (click to select).
     for key, (name, _) in PERIODS.items():

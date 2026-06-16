@@ -9,6 +9,11 @@ Menu bar gauge for your Cursor token usage and spend — inspired by
 - The dropdown lists **all periods** — Daily, Weekly, Monthly, 6 Months,
   1 Year — each with cost and tokens. **Click a period to make it the
   menu bar gauge.**
+- A **Display** submenu switches what the menu bar shows for the selected
+  period: `Total ($ · tokens)` (default), `$ / hour`, `$ / minute`,
+  `tokens / hour`, or `tokens / minute`. Rates are the period's average
+  (total ÷ window), so `Daily` gives the most current rate and longer
+  periods give long-run averages.
 - Below that, a **per-model breakdown** for the selected period: cost,
   input+output tokens, and cache tokens.
 - Optional **spend ceilings** per period, just for visibility: the menu bar
@@ -104,6 +109,7 @@ put a token in `~/.config/cursor-quota/token` — either:
 | --- | --- |
 | `~/.config/cursor-quota/period` | Selected menu bar period (`daily`, `weekly`, `monthly`, `6months`, `1year`) |
 | `~/.config/cursor-quota/scope` | Selected scope (`you` or `team`; `team` is admins-only) |
+| `~/.config/cursor-quota/display` | Menu bar display mode (`total`, `cost_hr`, `cost_min`, `tok_hr`, `tok_min`) |
 | `~/.config/cursor-quota/limits` | Optional spend ceilings per scope+period (visibility only, editable from the Limits submenu) |
 | `~/.config/cursor-quota/token` | Optional manual token override |
 
