@@ -47,15 +47,18 @@ plugin folder (`~/.swiftbar` by default).
 The plugin reads your Cursor login token from Cursor's local state database
 (`~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`,
 **read-only** — it never modifies anything, so it can't log you out) and
-queries the same usage endpoint that the [cursor.com usage
+queries the same usage endpoints that the [cursor.com usage
 dashboard](https://cursor.com/dashboard/usage) uses
-(`/api/dashboard/get-aggregated-usage-events`). No passwords, no scraping,
-no third-party services.
+(`/api/dashboard/get-aggregated-usage-events` for longer windows, plus
+`/api/dashboard/get-filtered-usage-events` for the last few days). No
+passwords, no scraping, no third-party services.
 
 Periods are rolling windows ending now: last 24 hours, 7 days, 30 days,
 182 days, and 365 days. Long windows that span Cursor's backend shard
 boundaries are split automatically and merged client-side (the API requires
-it).
+it). Cursor's aggregate totals lag about five days, so a rolling 24-hour
+window comes back empty; the plugin fills that gap (and the recent tail of
+longer periods) from the usage-event log.
 
 > **Note:** the endpoint is internal to Cursor's dashboard and undocumented,
 > so a future Cursor change may require a small fix here.
@@ -118,6 +121,11 @@ put a token in `~/.config/cursor-quota/token` — either:
 - **⚠ in the menu bar** — token missing or expired. Open the Cursor app once
   (it refreshes the token) and hit "Refresh now".
 - **HTTP 401 on a period row** — same cause: stale token, re-login in Cursor.
+- **Daily shows $0.00 · 0** — Cursor's aggregate usage API lags about five
+  days, so a rolling 24h query returns empty. The plugin fills that from the
+  usage-event log; hit "Refresh now" after updating. If Daily still shows $0,
+  there is no usage in that window (or the event log failed — look for ⚠ on
+  the Daily row).
 
 ## Uninstall
 

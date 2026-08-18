@@ -10,7 +10,7 @@ WorkosCursorSessionToken cookie value (or just the JWT) in
 ~/.config/cursor-quota/token.
 
 <xbar.title>cursor-quota</xbar.title>
-<xbar.version>v1.0.0</xbar.version>
+<xbar.version>v1.0.1</xbar.version>
 <xbar.author>Reinaldo Simoes</xbar.author>
 <xbar.author.github>reinaldo-simoes-wp</xbar.author.github>
 <xbar.desc>Cursor token usage and spend in your menu bar: per-period cost/tokens with a per-model breakdown, read straight from your local Cursor session.</xbar.desc>
@@ -33,12 +33,20 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 REPO_URL = "https://github.com/reinaldo-simoes-wp/cursor-quota"
 
 API_URL = "https://cursor.com/api/dashboard/get-aggregated-usage-events"
+FILTERED_URL = "https://cursor.com/api/dashboard/get-filtered-usage-events"
 TEAMS_URL = "https://cursor.com/api/dashboard/teams"
 ME_URL = "https://cursor.com/api/dashboard/get-me"
+# Aggregate totals lag ~5 days; pull this many days from the event log to fill.
+AGG_LAG_DAYS = 5
+# When merging onto a non-empty aggregate, only overlay this many recent days
+# so we don't double-count the ~114h rollup edge (4d lookbacks are still {}).
+FILL_LAG_DAYS = 4
+FILTERED_PAGE_SIZE = 1000
+FILTERED_MAX_PAGES = 50
 STATE_DB = os.path.expanduser(
     "~/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
 )
@@ -364,6 +372,156 @@ def merge_usage(a, b):
     return merged
 
 
+def is_empty_usage(d):
+    """True when the aggregate API returned nothing usable ({} or no totals).
+
+    A lag-empty 24h window looks like this and must not be shown as $0. Genuine
+    zero usage with explicit zeros also matches; callers then fall through to
+    the event log, which will also be empty."""
+    if not d:
+        return True
+    if d.get("aggregations"):
+        return False
+    if d.get("totalCostCents"):
+        return False
+    for field in (
+        "totalInputTokens",
+        "totalOutputTokens",
+        "totalCacheWriteTokens",
+        "totalCacheReadTokens",
+    ):
+        if int(d.get(field) or 0):
+            return False
+    return True
+
+
+def event_ts(event):
+    try:
+        return int(event.get("timestamp") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def usage_from_events(events):
+    """Fold filtered usage events into the get-aggregated-usage-events shape."""
+    totals = {
+        "totalInputTokens": 0,
+        "totalOutputTokens": 0,
+        "totalCacheWriteTokens": 0,
+        "totalCacheReadTokens": 0,
+        "totalCostCents": 0,
+    }
+    by_model = {}
+    token_fields = (
+        "inputTokens",
+        "outputTokens",
+        "cacheWriteTokens",
+        "cacheReadTokens",
+    )
+    total_key = {
+        "inputTokens": "totalInputTokens",
+        "outputTokens": "totalOutputTokens",
+        "cacheWriteTokens": "totalCacheWriteTokens",
+        "cacheReadTokens": "totalCacheReadTokens",
+    }
+    for event in events:
+        tu = event.get("tokenUsage") or {}
+        model = event.get("model") or "unknown"
+        cur = by_model.setdefault(
+            model,
+            {"modelIntent": model, "totalCents": 0, **{f: 0 for f in token_fields}},
+        )
+        cents = tu.get("totalCents") or 0
+        cur["totalCents"] += cents
+        totals["totalCostCents"] += cents
+        for field in token_fields:
+            n = int(tu.get(field) or 0)
+            cur[field] += n
+            totals[total_key[field]] += n
+    return {
+        "totalInputTokens": str(totals["totalInputTokens"]),
+        "totalOutputTokens": str(totals["totalOutputTokens"]),
+        "totalCacheWriteTokens": str(totals["totalCacheWriteTokens"]),
+        "totalCacheReadTokens": str(totals["totalCacheReadTokens"]),
+        "totalCostCents": totals["totalCostCents"],
+        "aggregations": [
+            {
+                "modelIntent": row["modelIntent"],
+                "totalCents": row["totalCents"],
+                **{f: str(row[f]) for f in token_fields},
+            }
+            for row in by_model.values()
+        ],
+    }
+
+
+def fetch_filtered_events(cookie, start_ms, end_ms, extras=None):
+    """Paginate get-filtered-usage-events for [start_ms, end_ms].
+
+    A missing/zero total must not stop after the first page: keep going while
+    the batch is full. Hitting the page cap short of the reported total is an
+    error so Daily cannot silently undercount as $0."""
+    events = []
+    page = 1
+    total = None
+    while page <= FILTERED_MAX_PAGES:
+        payload = {
+            "startDate": str(start_ms),
+            "endDate": str(end_ms),
+            "page": page,
+            "pageSize": FILTERED_PAGE_SIZE,
+        }
+        payload.update(extras or {})
+        resp = api_post(cookie, FILTERED_URL, payload)
+        batch = resp.get("usageEventsDisplay") or []
+        events.extend(batch)
+        if resp.get("totalUsageEventsCount") is not None:
+            total = resp["totalUsageEventsCount"]
+        if total is not None and len(events) >= total:
+            break
+        if len(batch) < FILTERED_PAGE_SIZE:
+            break
+        page += 1
+    else:
+        if total is None or len(events) < total:
+            shown = "?" if total is None else total
+            raise RuntimeError(
+                f"usage events truncated at {FILTERED_MAX_PAGES} pages "
+                f"({len(events)}/{shown})"
+            )
+    return events
+
+
+def combine_usage(agg, events, start_ms, end_ms, now_ms):
+    """Clip recent events into a period and merge onto aggregate totals.
+
+    Empty aggregate (typical for Daily, whose window sits inside the lag) uses
+    events only. Non-empty aggregate gets the last FILL_LAG_DAYS of events so
+    the recent tail is included without double-counting the rollup edge.
+    """
+    in_window = [e for e in events if start_ms <= event_ts(e) <= end_ms]
+    if is_empty_usage(agg):
+        return usage_from_events(in_window)
+    fill_start = now_ms - FILL_LAG_DAYS * DAY_MS
+    fill = [e for e in in_window if event_ts(e) >= fill_start]
+    if not fill:
+        return agg
+    fill_usage = usage_from_events(fill)
+    # Event `model` is a display name; aggregate rows use modelIntent slugs.
+    # Keep one synthetic row so weekly+ model lists don't split in two.
+    fill_usage["aggregations"] = [
+        {
+            "modelIntent": f"recent (last {FILL_LAG_DAYS} days)",
+            "totalCents": fill_usage["totalCostCents"],
+            "inputTokens": fill_usage["totalInputTokens"],
+            "outputTokens": fill_usage["totalOutputTokens"],
+            "cacheWriteTokens": fill_usage["totalCacheWriteTokens"],
+            "cacheReadTokens": fill_usage["totalCacheReadTokens"],
+        }
+    ]
+    return merge_usage(agg, fill_usage)
+
+
 def split_boundary_ms(http_error, start_ms, end_ms):
     """Long windows can span backend shards; the 400 response names the split
     dates ("Split the query at one of those dates"). The message also echoes
@@ -518,12 +676,21 @@ def main():
         extras = {"userId": who["user_id"]}
         header = "Cursor usage (yours)"
 
+    now_ms = int(time.time() * 1000)
     results, errors = {}, {}
-    with ThreadPoolExecutor(max_workers=len(PERIODS)) as pool:
+    recent_events, recent_error = [], None
+    with ThreadPoolExecutor(max_workers=len(PERIODS) + 1) as pool:
         futures = {
             key: pool.submit(fetch_usage, cookie, days, extras)
             for key, (_, days) in PERIODS.items()
         }
+        recent_fut = pool.submit(
+            fetch_filtered_events,
+            cookie,
+            now_ms - AGG_LAG_DAYS * DAY_MS,
+            now_ms,
+            extras,
+        )
         for key, fut in futures.items():
             try:
                 results[key] = fut.result()
@@ -533,6 +700,40 @@ def main():
                 )
             except Exception as e:
                 errors[key] = str(e)
+        try:
+            recent_events = recent_fut.result()
+        except urllib.error.HTTPError as e:
+            recent_error = f"HTTP {e.code}" + (
+                " — token rejected, re-login in Cursor" if e.code == 401 else ""
+            )
+        except Exception as e:
+            recent_error = str(e)
+
+    # Aggregate totals omit the last ~5 days. Overlay the event log so Daily
+    # (entirely inside that lag) is not shown as $0, and longer periods pick
+    # up the recent tail.
+    for key, (_, days) in PERIODS.items():
+        start_ms = now_ms - days * DAY_MS
+        if key in results:
+            agg = results[key]
+            if is_empty_usage(agg):
+                if recent_error is not None:
+                    results.pop(key)
+                    errors[key] = recent_error
+                else:
+                    results[key] = combine_usage(
+                        agg, recent_events, start_ms, now_ms, now_ms
+                    )
+            elif recent_error is None:
+                results[key] = combine_usage(
+                    agg, recent_events, start_ms, now_ms, now_ms
+                )
+        elif recent_error is None and days <= AGG_LAG_DAYS:
+            # Aggregate failed but the window fits in the event-log fetch.
+            results[key] = combine_usage(
+                {}, recent_events, start_ms, now_ms, now_ms
+            )
+            errors.pop(key, None)
 
     limits = read_limits()
     display = read_display()
