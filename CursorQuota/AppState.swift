@@ -20,8 +20,12 @@ final class AppState: ObservableObject {
     /// Frame counter for the menu bar glyph wave; only advances while busy.
     @Published private(set) var loadingFrame = 0
 
-    /// Per-column dot heights (1...5) for the selected period's spend trend.
-    @Published private(set) var trendLevels: [Int]?
+    /// Each trend bucket's spend as a fraction (0...1) of the period's busiest bucket.
+    @Published private(set) var trendLevels: [Double]?
+    /// The same buckets in cents, for the hover readout.
+    @Published private(set) var trendCents: [Int]?
+    /// When the shown trend was fetched; its buckets end here, not at the current clock.
+    @Published private(set) var trendFetchedAt: Date?
 
     @Published var selectedPeriod: PeriodKey {
         didSet {
@@ -67,7 +71,7 @@ final class AppState: ObservableObject {
     private var lastRecentEvents: [[String: Any]] = []
     /// False when the event-log fetch failed, so an empty log is not read as zero spend.
     private var lastEventsAvailable = false
-    private var trendCache: [LimitKey: [Int]] = [:]
+    private var trendCache: [LimitKey: (cents: [Int], fetchedAt: Date)] = [:]
 
     /// Nested loads (full refresh plus a trend refetch) share one animation.
     private var busyCount = 0 {
@@ -89,17 +93,17 @@ final class AppState: ObservableObject {
     }
 
     /// Sample data for offline UI previews (`scripts/preview-popover.sh`).
-    static func previewSample() -> AppState {
+    static func previewSample(period: PeriodKey = .weekly) -> AppState {
         let state = AppState(preview: true)
-        state.applyPreviewFixture()
+        state.applyPreviewFixture(period: period)
         return state
     }
 
-    func applyPreviewFixture() {
+    func applyPreviewFixture(period: PeriodKey = .weekly) {
         header = "Cursor usage (yours)"
         identity = CursorIdentity(userID: 1, teamID: 42, teamName: "Acme", isAdmin: true)
         effectiveScope = .you
-        selectedPeriod = .weekly
+        selectedPeriod = period
         display = .cost
         limits = [LimitKey(scope: .you, period: .weekly): 1000]
         results = [
@@ -186,8 +190,20 @@ final class AppState: ObservableObject {
                 aggregations: []
             ),
         ]
-        trendLevels = [1, 2, 3, 4, 5]
-        gauge = StatusGauge(title: "$187.40/$1,000 · 4.0M", limitColor: .orange)
+        setTrend(Self.previewTrend(for: period), fetchedAt: Date())
+        gauge = StatusGauge(title: "$187.40/$1,000", limitColor: .orange)
+    }
+
+    /// Deterministic sample spend at the period's real bucket count, so a preview shows
+    /// the granularity the period actually fetches.
+    private static func previewTrend(for period: PeriodKey) -> [Int] {
+        let count = AppConstants.trendBuckets(for: period)
+        guard count > 1 else { return [500] }
+        return (0..<count).map { index in
+            let position = Double(index) / Double(count - 1)
+            let shape = sin(position * 5.5) * 0.34 + sin(position * 13.5) * 0.16
+            return Int(min(max(0.5 + shape, 0.04), 1) * 900)
+        }
     }
 
     deinit {
@@ -281,6 +297,7 @@ final class AppState: ObservableObject {
             trendCache.removeAll()
 
             let period = selectedPeriod
+            let fetchedAt = Date()
             let cents = await CursorAPI.fetchTrend(
                 cookie: cookie,
                 period: period,
@@ -289,7 +306,7 @@ final class AppState: ObservableObject {
                 eventsAvailable: lastEventsAvailable
             )
             guard !Task.isCancelled, generation == refreshGeneration else { return }
-            applyTrend(cents, scope: effectiveScope, period: period)
+            applyTrend(cents, scope: effectiveScope, period: period, fetchedAt: fetchedAt)
         } catch is CancellationError {
             return
         } catch let error as TokenError {
@@ -307,7 +324,7 @@ final class AppState: ObservableObject {
         results = [:]
         errors = [:]
         header = ""
-        trendLevels = nil
+        setTrend(nil, fetchedAt: nil)
         trendCache.removeAll()
         lastCookie = nil
         lastEventsAvailable = false
@@ -316,14 +333,40 @@ final class AppState: ObservableObject {
 
     // MARK: - Trend
 
-    private func applyTrend(_ cents: [Int]?, scope: ScopeKey, period: PeriodKey) {
+    private func applyTrend(
+        _ cents: [Int]?,
+        scope: ScopeKey,
+        period: PeriodKey,
+        fetchedAt: Date
+    ) {
         if let cents {
-            trendCache[LimitKey(scope: scope, period: period)] = Self.levels(from: cents)
+            trendCache[LimitKey(scope: scope, period: period)] = (cents, fetchedAt)
         }
         // A late result must never overwrite whatever period is on screen now.
         guard period == selectedPeriod, scope == effectiveScope else { return }
         // A failed bucket must not read as a dip, so show no sparkline at all.
+        setTrend(cents, fetchedAt: fetchedAt)
+    }
+
+    private func setTrend(_ cents: [Int]?, fetchedAt: Date?) {
+        trendCents = cents
+        trendFetchedAt = cents == nil ? nil : fetchedAt
         trendLevels = cents.map(Self.levels(from:))
+    }
+
+    /// Time range of a trend bucket, mirroring how `CursorAPI.fetchTrend` slices the
+    /// period so a hovered column names the window its dots actually came from.
+    func trendBucketLabel(_ index: Int) -> String? {
+        guard let cents = trendCents,
+              cents.indices.contains(index),
+              let fetchedAt = trendFetchedAt
+        else { return nil }
+
+        let window = Double(selectedPeriod.days) * 86_400
+        let bucket = window / Double(cents.count)
+        let start = fetchedAt.addingTimeInterval(-window + Double(index) * bucket)
+        let end = index == cents.count - 1 ? fetchedAt : start.addingTimeInterval(bucket)
+        return "\(Formatters.trendBucket(start: start, end: end)) · \(Formatters.cost(cents: cents[index]))"
     }
 
     /// Refetches only the sparkline, reusing the last refresh's cookie and event log.
@@ -342,6 +385,7 @@ final class AppState: ObservableObject {
 
         beginBusy()
         trendTask = Task { [weak self] in
+            let fetchedAt = Date()
             let cents = await CursorAPI.fetchTrend(
                 cookie: cookie,
                 period: period,
@@ -353,18 +397,18 @@ final class AppState: ObservableObject {
                 self?.endBusy()
                 return
             }
-            self.applyTrend(cents, scope: scope, period: period)
+            self.applyTrend(cents, scope: scope, period: period, fetchedAt: fetchedAt)
             self.endBusy()
         }
     }
 
-    /// Scales bucket costs onto the glyph's dot heights.
-    static func levels(from cents: [Int]) -> [Int] {
+    /// Normalizes bucket costs against the busiest bucket, so the drawing decides how
+    /// many dot rows that maps to.
+    static func levels(from cents: [Int]) -> [Double] {
         guard let peak = cents.max(), peak > 0 else {
-            return Array(repeating: 1, count: cents.count)
+            return Array(repeating: 0, count: cents.count)
         }
-        let span = Double(AppConstants.trendLevelSteps - 1)
-        return cents.map { 1 + Int((Double($0) / Double(peak) * span).rounded()) }
+        return cents.map { Double($0) / Double(peak) }
     }
 
     // MARK: - Scope helpers
@@ -443,9 +487,9 @@ final class AppState: ObservableObject {
         selectedPeriod = period
         // Totals for every period are already cached; only the sparkline is period-specific.
         if let cached = trendCache[LimitKey(scope: effectiveScope, period: period)] {
-            trendLevels = cached
+            setTrend(cached.cents, fetchedAt: cached.fetchedAt)
         } else {
-            trendLevels = nil
+            setTrend(nil, fetchedAt: nil)
             refreshTrend()
         }
     }
@@ -454,7 +498,7 @@ final class AppState: ObservableObject {
         guard newScope != scope else { return }
         selectedModel = nil
         scope = newScope
-        trendLevels = nil
+        setTrend(nil, fetchedAt: nil)
         trendCache.removeAll()
         refreshNow()
     }

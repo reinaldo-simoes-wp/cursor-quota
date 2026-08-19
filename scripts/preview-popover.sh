@@ -32,7 +32,10 @@ import SwiftUI
 
 @MainActor
 func renderPopover() {
-    let state = AppState.previewSample()
+    // Optional period argument, so any period's trend granularity can be inspected.
+    let period = CommandLine.arguments.dropFirst().first
+        .flatMap(PeriodKey.init(rawValue:)) ?? .weekly
+    let state = AppState.previewSample(period: period)
     let panel = PopoverView(appState: state)
         .padding(12)
         .background(Color(NSColor.windowBackgroundColor))
@@ -57,4 +60,4 @@ swift "${PREVIEW}" -o /tmp/cursor-quota-popover-preview 2>/dev/null || {
   SDK="$(xcrun --show-sdk-path --sdk macosx)"
   swiftc -sdk "${SDK}" -target "$(uname -m)-apple-macos13.0" "${PREVIEW}" -o /tmp/cursor-quota-popover-preview
 }
-/tmp/cursor-quota-popover-preview
+/tmp/cursor-quota-popover-preview "$@"

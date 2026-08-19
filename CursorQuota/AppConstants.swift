@@ -20,10 +20,26 @@ enum AppConstants {
     static let refreshInterval: TimeInterval = 300
     static let loadingFrameNanoseconds: UInt64 = 110_000_000
     static let loadingPhaseStep: Double = 0.55
-    /// Columns in the menu bar glyph, and therefore buckets in the trend sparkline.
-    static let trendBuckets = 5
-    /// Dot heights a bucket's spend is scaled onto; the panel stretches this range.
-    static let trendLevelSteps = 5
+    /// Dot rows in the menu bar glyph. The panel draws the same trend on a taller grid.
+    static let glyphRows = 5
+    /// Width of the loading wave in columns, kept fixed so the animation reads the
+    /// same regardless of how many buckets the selected period has.
+    static let loadingWaveSpan: Double = 5
+
+    /// Slices the selected period's spend is split into for the trend.
+    ///
+    /// Only buckets that start before the aggregate lag cost an API call; newer ones
+    /// come from the event log already in memory. Daily sits entirely inside the lag,
+    /// and a 7-day period still has just two pre-lag buckets at one bucket per day,
+    /// so both can be finer for free. Longer periods pay per bucket, so they stay
+    /// coarse.
+    static func trendBuckets(for period: PeriodKey) -> Int {
+        switch period {
+        case .daily: 24
+        case .weekly: 7
+        case .monthly, .threeMonths, .sixMonths, .oneYear: 5
+        }
+    }
 
     static let stateDB = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb")

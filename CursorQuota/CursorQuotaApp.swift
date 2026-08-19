@@ -38,7 +38,9 @@ struct CursorQuotaApp: App {
     /// MenuBarExtra caches its label aggressively; the phase keeps each frame distinct.
     private var labelIdentity: String {
         let frame = appState.isRefreshing ? String(appState.loadingFrame) : "idle"
-        let trend = appState.trendLevels?.map(String.init).joined(separator: "") ?? "none"
+        let trend = appState.trendLevels?
+            .map { String(Int(($0 * 100).rounded())) }
+            .joined(separator: ",") ?? "none"
         let color = appState.gauge.limitColor.map(String.init(describing:)) ?? "none"
         return "\(appState.gauge.title)|\(color)|\(trend)|\(frame)"
     }

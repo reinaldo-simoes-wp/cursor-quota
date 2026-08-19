@@ -18,21 +18,26 @@ cat >> "${PREVIEW}" <<'SWIFT'
 func renderStrip() {
     struct Sample {
         var gauge: StatusGauge
-        var levels: [Int]?
+        var levels: [Double]?
         var phase: Double?
     }
 
-    let rising = [1, 2, 3, 4, 5]
-    let falling = [5, 4, 2, 2, 1]
-    let spiky = [1, 4, 1, 2, 5]
+    // Hourly, as Daily now reports it, so the glyph's downsampling is exercised.
+    let rising = (0..<24).map { Double($0) / 23 }
+    let falling = (0..<24).map { 1 - Double($0) / 23 }
+    // One burst of work in an otherwise quiet day.
+    let spiky = (0..<24).map { (14...17).contains($0) ? 1.0 : 0.12 }
 
+    // The menu bar shows one figure: either cost or tokens.
     var samples: [Sample] = [
-        Sample(gauge: StatusGauge(title: "$4.12 · 1.2M  (rising)", limitColor: nil), levels: rising),
-        Sample(gauge: StatusGauge(title: "$4.12 · 1.2M  (falling)", limitColor: nil), levels: falling),
-        Sample(gauge: StatusGauge(title: "$4.12 · 1.2M  (spiky)", limitColor: nil), levels: spiky),
-        Sample(gauge: StatusGauge(title: "$187.40/$250 · 48.3M", limitColor: .orange), levels: rising),
-        Sample(gauge: StatusGauge(title: "$237.00/$250 · 61.0M", limitColor: .red), levels: spiky),
-        Sample(gauge: StatusGauge(title: "$0.00 · 0  (no spend)", limitColor: nil), levels: [1, 1, 1, 1, 1]),
+        Sample(gauge: StatusGauge(title: "$4.12", limitColor: nil), levels: rising),
+        Sample(gauge: StatusGauge(title: "$4.12", limitColor: nil), levels: falling),
+        Sample(gauge: StatusGauge(title: "$4.12", limitColor: nil), levels: spiky),
+        Sample(gauge: StatusGauge(title: "1.2M", limitColor: nil), levels: rising),
+        Sample(gauge: StatusGauge(title: "48.3M", limitColor: nil), levels: spiky),
+        Sample(gauge: StatusGauge(title: "$187.40/$250", limitColor: .orange), levels: rising),
+        Sample(gauge: StatusGauge(title: "$237.00/$250", limitColor: .red), levels: spiky),
+        Sample(gauge: StatusGauge(title: "$0.00", limitColor: nil), levels: Array(repeating: 0, count: 24)),
         Sample(gauge: StatusGauge(title: "⚠ Cursor", limitColor: nil), levels: nil),
     ]
 

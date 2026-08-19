@@ -5,14 +5,14 @@ import SwiftUI
 @MainActor
 struct GaugeLabelView: View {
     let gauge: StatusGauge
-    var trendLevels: [Int]?
+    var trendLevels: [Double]?
     var loadingPhase: Double?
 
     var body: some View {
         HStack(spacing: 4) {
             DottedGraphGlyph(
                 color: tint,
-                levels: trendLevels?.map(Double.init) ?? [],
+                levels: trendLevels ?? [],
                 phase: loadingPhase
             )
             .frame(width: 11, height: 11)

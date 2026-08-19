@@ -48,11 +48,10 @@ struct AnimatableVector: VectorArithmetic {
 /// and the remainder is split evenly, keeping the margins consistent too.
 struct DottedGraphGlyph: View, Animatable {
     var color: Color
-    /// Heights on the 1...trendLevelSteps scale; empty means no trend yet.
+    /// Each bucket's spend as a fraction of the busiest one; empty means no trend yet.
     var levels: [Double]
     var phase: Double?
-    var buckets: Int = AppConstants.trendBuckets
-    var maxRows: Int = AppConstants.trendLevelSteps
+    var maxRows: Int = AppConstants.glyphRows
     var dotSize: CGFloat = 1.7
     /// Portion of each column, measured from the baseline, drawn in `highlightColor`.
     var highlightFraction: Double?
@@ -65,7 +64,7 @@ struct DottedGraphGlyph: View, Animatable {
 
     var body: some View {
         Canvas { context, size in
-            guard maxRows > 1, buckets > 0 else { return }
+            guard maxRows > 1 else { return }
 
             let pitch = (size.height - dotSize) / CGFloat(maxRows - 1)
             guard pitch > 0 else { return }
@@ -73,10 +72,10 @@ struct DottedGraphGlyph: View, Animatable {
             let columns = max(2, Int((size.width - dotSize) / pitch) + 1)
             let gridWidth = CGFloat(columns - 1) * pitch + dotSize
             let originX = (size.width - gridWidth) / 2
+            let heights = rowHeights(columns: columns)
 
             for column in 0..<columns {
-                let position = Double(column) / Double(columns) * Double(buckets)
-                let filled = rows(atBucketPosition: position)
+                let filled = heights[column]
                 let highlighted = highlightFraction.map {
                     Int((Double(filled) * min(max($0, 0), 1)).rounded())
                 }
@@ -99,26 +98,37 @@ struct DottedGraphGlyph: View, Animatable {
         return row < highlighted ? highlightColor : color.opacity(0.22)
     }
 
-    private func rows(atBucketPosition position: Double) -> Int {
+    /// Dot count per column, scaled so the busiest column fills the grid.
+    ///
+    /// A period can have more buckets than the grid has columns, so each column averages
+    /// the buckets it spans. Averaging keeps a narrow glyph reading as spend per slice;
+    /// taking the peak instead would saturate every column once spikes are common.
+    /// Scaling happens after that, so the tallest column always reaches the top row
+    /// whether the grid is wider or narrower than the data.
+    private func rowHeights(columns: Int) -> [Int] {
         if let phase {
-            let wave = sin(phase - position * 0.7)
-            return 1 + Int((((wave + 1) / 2) * Double(maxRows - 1)).rounded())
+            return (0..<columns).map { column in
+                let position = Double(column) / Double(columns) * AppConstants.loadingWaveSpan
+                let wave = sin(phase - position * 0.7)
+                return 1 + Int((((wave + 1) / 2) * Double(maxRows - 1)).rounded())
+            }
         }
-        if !levels.isEmpty {
-            let index = min(max(Int(position), 0), levels.count - 1)
-            return scaledRows(forLevel: levels[index])
-        }
-        // No trend yet: a flat baseline, never a ramp that would imply rising spend.
-        return 1
-    }
 
-    /// `levels` are always on the 1...trendLevelSteps scale, so a taller grid has to
-    /// stretch them rather than clamp everything into the bottom few rows.
-    private func scaledRows(forLevel level: Double) -> Int {
-        let steps = Double(AppConstants.trendLevelSteps)
-        guard steps > 1 else { return 1 }
-        let clamped = min(max(level, 1), steps)
-        let fraction = (clamped - 1) / (steps - 1)
-        return 1 + Int((fraction * Double(maxRows - 1)).rounded())
+        // No trend yet: a flat baseline, never a ramp that would imply rising spend.
+        guard !levels.isEmpty else { return Array(repeating: 1, count: columns) }
+
+        let scale = Double(levels.count) / Double(columns)
+        let averages = (0..<columns).map { column -> Double in
+            // Half-open spans, so neighbouring columns never share a bucket and smear it.
+            let first = min(Int(Double(column) * scale), levels.count - 1)
+            let next = min(max(Int(Double(column + 1) * scale), first + 1), levels.count)
+            let span = levels[first..<next]
+            return span.reduce(0, +) / Double(span.count)
+        }
+
+        guard let peak = averages.max(), peak > 0 else {
+            return Array(repeating: 1, count: columns)
+        }
+        return averages.map { 1 + Int(($0 / peak * Double(maxRows - 1)).rounded()) }
     }
 }

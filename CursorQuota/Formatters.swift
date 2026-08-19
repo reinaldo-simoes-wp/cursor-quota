@@ -53,6 +53,31 @@ enum Formatters {
         }
     }
 
+    /// Names a trend bucket by its own width, so an hourly slice reads as an hour and a
+    /// multi-month slice as a range. Templates are localized, so 12- or 24-hour clocks
+    /// and day/month order follow the user's settings.
+    static func trendBucket(start: Date, end: Date) -> String {
+        let span = end.timeIntervalSince(start)
+        if span <= 2 * 3600 {
+            return localized("jm", from: start)
+        }
+        if span <= 36 * 3600 {
+            return localized("EEEd", from: start)
+        }
+        // Past about three weeks a slice spans months, so naming days stops being useful.
+        if span <= 25 * 86_400 {
+            return "\(localized("MMMd", from: start)) – \(localized("MMMd", from: end))"
+        }
+        return "\(localized("MMMy", from: start)) – \(localized("MMMy", from: end))"
+    }
+
+    private static func localized(_ template: String, from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate(template)
+        return formatter.string(from: date)
+    }
+
     static func limitDollars(_ value: Double) -> String {
         if value.truncatingRemainder(dividingBy: 1) == 0 {
             return String(format: "$%.0f", value)

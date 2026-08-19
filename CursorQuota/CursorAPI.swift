@@ -316,7 +316,8 @@ enum CursorAPI {
         return (results, errors, recentEvents, recentError)
     }
 
-    /// Cost per equal-width slice of the selected period, for the menu bar sparkline.
+    /// Cost per equal-width slice of the selected period, for the menu bar glyph and the
+    /// panel's spend trend.
     ///
     /// Every slice is cut at the aggregate-lag boundary rather than merged with
     /// `combineUsage`. That helper overlays the last few days *relative to now*,
@@ -337,7 +338,7 @@ enum CursorAPI {
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
         let windowMs = Int64(period.days) * AppConstants.dayMs
         let startMs = nowMs - windowMs
-        let buckets = AppConstants.trendBuckets
+        let buckets = AppConstants.trendBuckets(for: period)
         let bucketMs = windowMs / Int64(buckets)
         let lagStartMs = nowMs - Int64(AppConstants.aggLagDays) * AppConstants.dayMs
 

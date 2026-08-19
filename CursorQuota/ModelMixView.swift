@@ -8,7 +8,7 @@ struct ModelMixView: View {
             let aggs = data.aggregations.sorted { $0.totalCents > $1.totalCents }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Models · \(appState.selectedPeriod.label.lowercased())")
+                Text(modelsHeading)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
@@ -43,6 +43,15 @@ struct ModelMixView: View {
                     .foregroundStyle(.secondary.opacity(0.65))
             }
         }
+    }
+
+    /// The selected model is already named in its row; only its share sits next to the period.
+    private var modelsHeading: String {
+        let period = appState.selectedPeriod.label.lowercased()
+        guard let share = appState.selectedModelShare() else {
+            return "Models · \(period)"
+        }
+        return "Models · \(period) · \(Int((share * 100).rounded()))%"
     }
 }
 
@@ -83,12 +92,7 @@ private struct ModelRow: View {
                 )
                 .animation(PopoverTheme.valueAnimation, value: fraction)
 
-                // Share replaces nothing, so the row height is the same either way.
-                Text(
-                    selected
-                        ? "\(Int((fraction * 100).rounded()))% of spend · \(Formatters.tokens(io)) io · \(Formatters.tokens(cache)) cache"
-                        : "\(Formatters.tokens(io)) io · \(Formatters.tokens(cache)) cache"
-                )
+                Text("\(Formatters.tokens(io)) io · \(Formatters.tokens(cache)) cache")
                 .font(.system(size: 9, design: .monospaced))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)

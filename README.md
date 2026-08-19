@@ -20,10 +20,12 @@ Menu bar gauge for your Cursor token usage and spend — inspired by
   shows `$237/$250` and turns orange at 70% and red at 90% of the ceiling.
   The panel shows a ceiling arc on the hero readout; tap it for presets.
 - A **dot-matrix sparkline** sits left of the menu bar numbers and is drawn
-  larger in the panel, showing the selected period's spend split into five
-  equal buckets — so you can see at a glance whether usage is ramping up or
-  tailing off. It animates as a travelling wave while a refresh is in flight,
-  and takes the same orange/red tint as the gauge when a ceiling is set.
+  larger in the panel, showing how the selected period's spend is distributed
+  over time — so you can see at a glance whether usage is ramping up or tailing
+  off. Daily is hourly and Weekly is per day; **hover the panel graph** for a
+  vertical marker naming that slice and its spend. It animates as a travelling
+  wave while a refresh is in flight, and takes the same orange/red tint as the
+  gauge when a ceiling is set.
 - Refreshes every 5 minutes plus a manual **Refresh** button in the panel.
 
 **macOS only** — native menu bar app (macOS 13+). No SwiftBar required.
@@ -136,10 +138,19 @@ put a token in `~/.config/cursor-quota/token` — either:
 
 ## Trend sparkline
 
-The glyph buckets the selected period into five equal slices and scales each
-bucket's spend against the busiest one, so whenever there is any spend the
-tallest column is five dots. If every bucket is zero, all five sit at the
-baseline.
+The selected period is split into equal buckets. How many depends on what the
+period can measure without extra requests:
+
+| Period | Buckets |
+| --- | --- |
+| Daily | 24 (hourly) |
+| Weekly | 7 (daily) |
+| Monthly and longer | 5 |
+
+Each column of dots shows the average of the buckets it spans, scaled so the
+busiest column fills the grid — five rows in the menu bar, thirteen in the
+panel. Averaging rather than peaking keeps the narrow menu bar glyph reading as
+spend per slice. If every bucket is zero, all columns sit at the baseline.
 
 Each bucket is resolved against Cursor's ~5-day aggregate lag rather than
 blindly merged:
@@ -150,10 +161,13 @@ blindly merged:
 | Entirely older than the lag | One aggregate call for that slice |
 | Straddling the boundary | Aggregate before the boundary plus event-log data after it |
 
-So Daily costs nothing extra, and longer periods add at most five parallel
-calls. Switching periods refetches **only** the sparkline (totals for every
-period are already cached) and results are memoized per scope and period, so
-flipping back and forth is free. Changing scope clears the cache.
+Only buckets that start before the lag cost a call, which is what caps the
+bucket counts above: Daily sits entirely inside the lag and is free at any
+granularity, Weekly needs two calls whether it uses five buckets or seven, and
+longer periods would pay one call per added bucket. Switching periods refetches
+**only** the sparkline (totals for every period are already cached) and results
+are memoized per scope and period, so flipping back and forth is free. Changing
+scope clears the cache.
 
 If any bucket fails — or the usage-event log itself failed, which would make
 recent buckets look empty — the glyph drops to a flat baseline instead of
@@ -230,7 +244,7 @@ use the native app. If you still have the SwiftBar plugin symlinked in
 - **⚠ with an HTTP 401 message** — same cause: stale token, re-login in Cursor.
   A 401 on any period is treated as a session failure, so the whole panel
   switches to the error state rather than showing one bad row.
-- **Daily shows $0.00 · 0** — Cursor's aggregate usage API lags about five
+- **Daily shows $0.00** — Cursor's aggregate usage API lags about five
   days, so a rolling 24h query returns empty. The app fills that from the
   usage-event log; hit "Refresh now" after updating. If Daily still shows $0,
   there is no usage in that window (or the event log failed — look for ⚠ on
