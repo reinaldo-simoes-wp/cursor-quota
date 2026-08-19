@@ -3,7 +3,6 @@ import SwiftUI
 @main
 struct CursorQuotaApp: App {
     @StateObject private var appState = AppState()
-    @StateObject private var updateController = UpdateController()
 
     init() {
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -11,7 +10,7 @@ struct CursorQuotaApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarView(appState: appState, updateController: updateController)
+            MenuBarView(appState: appState)
         } label: {
             gaugeLabel
                 .id(labelIdentity)

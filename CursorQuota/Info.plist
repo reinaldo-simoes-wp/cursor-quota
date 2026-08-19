@@ -28,15 +28,5 @@
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
-    <key>SUFeedURL</key>
-    <string>https://github.com/reinaldo-simoes-wp/cursor-quota/releases/latest/download/appcast.xml</string>
-    <key>SUPublicEDKey</key>
-    <string>DGJ2jmEE5V5nXpDsE/QGqcZsvs8/L+Z7mATB1GLcHOY=</string>
-    <key>SUEnableAutomaticChecks</key>
-    <true/>
-    <key>SUAllowsAutomaticUpdates</key>
-    <false/>
-    <key>SUScheduledCheckInterval</key>
-    <integer>86400</integer>
 </dict>
 </plist>

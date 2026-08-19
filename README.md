@@ -24,18 +24,12 @@ Menu bar gauge for your Cursor token usage and spend — inspired by
   wave while a refresh is in flight, and takes the same orange/red tint as
   the gauge when a ceiling is set.
 - Refreshes every 5 minutes plus a manual "Refresh now" entry.
-- Checks GitHub Releases daily for signed updates. Use **Check for Updates…**
-  in the menu to check immediately.
 
 **macOS only** — native menu bar app (macOS 13+). No SwiftBar required.
 
 ## Quick install
 
-Download `CursorQuota-<version>.zip` from the
-[latest release](https://github.com/reinaldo-simoes-wp/cursor-quota/releases/latest),
-move `CursorQuota.app` to `/Applications`, and open it.
-
-To build from a checkout instead (requires Xcode Command Line Tools / Swift):
+Build from a checkout (requires Xcode Command Line Tools / Swift):
 
 ```sh
 git clone https://github.com/reinaldo-simoes-wp/cursor-quota.git
@@ -43,8 +37,27 @@ cd cursor-quota
 ./install.sh
 ```
 
-This builds `CursorQuota.app`, installs it to `/Applications`, and removes
-any legacy SwiftBar plugin symlink if present.
+This builds `CursorQuota.app`, installs it to `/Applications`, opens it, and
+removes any legacy SwiftBar plugin symlink if present.
+
+Once a version has been tagged you can instead download
+`CursorQuota-<version>.zip` from the
+[latest release](https://github.com/reinaldo-simoes-wp/cursor-quota/releases/latest),
+move `CursorQuota.app` to `/Applications`, and open it.
+
+## Updating
+
+The app does not update itself — replace the copy in `/Applications`:
+
+- **Installed from a checkout** — `git pull && ./install.sh`, which rebuilds,
+  replaces `/Applications/CursorQuota.app`, and relaunches it.
+- **Installed from a release** — quit CursorQuota, download the new
+  `CursorQuota-<version>.zip`, and drag the app over the old one. Drag over,
+  don't merge into, the existing bundle so nothing stale is left behind.
+
+**About → Latest release** in the menu opens the download page.
+
+Your settings live in `~/.config/cursor-quota/` and survive replacing the app.
 
 ## How it works
 
@@ -167,41 +180,11 @@ Two helper scripts support the menu bar UI:
 `AppIcon.icns` lives in the repo, so a normal build does not regenerate it —
 only rerun `make-icon.swift` after changing the source art.
 
-`build-app.sh` produces a universal Apple Silicon + Intel app, embeds Sparkle,
-signs nested code from the inside out, and verifies the complete bundle.
-Local builds use an ad-hoc signature. Release builds can set
+`build-app.sh` produces a universal Apple Silicon + Intel app and verifies the
+bundle signature. Local builds use an ad-hoc signature. Release builds can set
 `CODE_SIGN_IDENTITY` to a Developer ID Application identity.
 
-## Updates and releases
-
-[Sparkle 2](https://sparkle-project.org/) provides in-app updates. The app
-checks once per day, brings scheduled update alerts to the foreground, and
-also exposes **Check for Updates…** in both the normal and token-error menus.
-Updates require user confirmation rather than silently relaunching the app.
-Sparkle only installs archives signed by the Ed25519 public key embedded in
-`Info.plist`; the matching private key is stored as the repository's
-`SPARKLE_PRIVATE_KEY` Actions secret and is never committed.
-
-### One-time Sparkle signing setup
-
-`SPARKLE_PRIVATE_KEY` is required; release publishing fails closed without it.
-Generate a key once with Sparkle's bundled tools:
-
-```sh
-swift package resolve
-tools=.build/artifacts/sparkle/Sparkle/bin
-"$tools/generate_keys" --account cursor-quota
-"$tools/generate_keys" --account cursor-quota -x /secure/path/sparkle-private-key
-gh secret set SPARKLE_PRIVATE_KEY < /secure/path/sparkle-private-key
-```
-
-Copy the public key printed by the first command into `SUPublicEDKey` in
-`CursorQuota/Info.plist`. The committed public key and the private key secret
-must remain a pair or existing installations will reject future updates. Keep
-an offline backup of the private key; losing both the backup and Actions
-secret prevents signing compatible updates. During key rotation, preserve
-either the existing Ed25519 key or the existing Developer ID identity; never
-change both in the same update.
+## Releases
 
 Releases are automated by `.github/workflows/release.yml`:
 
@@ -216,24 +199,14 @@ Releases are automated by `.github/workflows/release.yml`:
    git push origin v2.0.0
    ```
 
-The tag workflow validates the version and signing-key pair, builds a universal
-app, creates a zip, signs the update with Sparkle, embeds generated release
-notes into `appcast.xml`, packages all available dSYMs, and publishes the
-assets through a draft so clients never see a half-uploaded feed. Reruns safely
-replace existing assets. Existing installations read the feed through the
-stable `releases/latest/download/appcast.xml` URL.
+The tag workflow validates the version, builds a universal app, packages a zip
+and all available dSYMs, and publishes them through a draft so nobody can
+download a half-uploaded release. Reruns safely replace existing assets.
 
-Publish the first GitHub release before distributing the updater-enabled app;
-until an `appcast.xml` asset exists, a manual update check correctly reports a
-feed retrieval error. Sparkle updates whichever `.app` bundle is running, so
-use `/Applications/CursorQuota.app` for production rather than opening the
-gitignored build output from the checkout.
-
-Without Apple credentials, the workflow uses ad-hoc macOS code signing plus
-Sparkle's cryptographic archive signature. For a warning-free first install,
-configure these repository secrets; the same workflow then signs with
-Developer ID, submits the archive for notarization, staples the ticket, and
-repackages it before generating the appcast:
+Without Apple credentials the workflow signs ad-hoc, which means the first
+launch of a downloaded build needs right-click → Open. For a warning-free
+install, configure these repository secrets; the same workflow then signs with
+Developer ID, submits the archive for notarization, and staples the ticket:
 
 - `DEVELOPER_ID_APPLICATION_P12` — base64-encoded Developer ID Application
   certificate and private key
@@ -265,8 +238,7 @@ use the native app. If you still have the SwiftBar plugin symlinked in
   that app some other way, right-click it and choose Open the first time.
 - **Gatekeeper blocks a GitHub release** — releases are warning-free only
   when the repository's Developer ID and notarization secrets are configured.
-  Without them, the archive is still protected for in-app updates by Sparkle's
-  signature, but the first installation may require right-click → Open.
+  Without them, the first launch requires right-click → Open.
 
 ## Uninstall
 

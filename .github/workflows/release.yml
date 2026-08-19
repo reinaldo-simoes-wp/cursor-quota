@@ -63,22 +63,16 @@ jobs:
             echo "No Developer ID certificate configured; using ad-hoc signing."
             exit 0
           fi
-          [[ -n "${DEVELOPER_ID_APPLICATION_PASSWORD:-}" ]] || {
-            echo "DEVELOPER_ID_APPLICATION_PASSWORD is required with the certificate." >&2
-            exit 1
-          }
-          [[ -n "${APPLE_ID:-}" ]] || {
-            echo "APPLE_ID is required for notarization." >&2
-            exit 1
-          }
-          [[ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]] || {
-            echo "APPLE_APP_SPECIFIC_PASSWORD is required for notarization." >&2
-            exit 1
-          }
-          [[ -n "${APPLE_TEAM_ID:-}" ]] || {
-            echo "APPLE_TEAM_ID is required for notarization." >&2
-            exit 1
-          }
+          for required in \
+            DEVELOPER_ID_APPLICATION_PASSWORD \
+            APPLE_ID \
+            APPLE_APP_SPECIFIC_PASSWORD \
+            APPLE_TEAM_ID; do
+            [[ -n "${!required:-}" ]] || {
+              echo "${required} is required alongside the Developer ID certificate." >&2
+              exit 1
+            }
+          done
 
           keychain="${RUNNER_TEMP}/cursor-quota.keychain-db"
           certificate="${RUNNER_TEMP}/developer-id.p12"
@@ -113,49 +107,13 @@ jobs:
       - name: Build universal application
         run: ./scripts/build-app.sh
 
-      - name: Validate Sparkle signing key
-        shell: bash
-        env:
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          [[ -n "${SPARKLE_PRIVATE_KEY:-}" ]] || {
-            echo "SPARKLE_PRIVATE_KEY is required." >&2
-            exit 1
-          }
-
-          private_key="${RUNNER_TEMP}/sparkle-private-key"
-          trap 'rm -f "${private_key}"' EXIT
-          printf '%s' "${SPARKLE_PRIVATE_KEY}" > "${private_key}"
-          decoded_bytes="$(base64 --decode < "${private_key}" | wc -c | tr -d ' ')"
-          [[ "${decoded_bytes}" == "32" ]] || {
-            echo "SPARKLE_PRIVATE_KEY is not a valid 32-byte Sparkle seed." >&2
-            exit 1
-          }
-
-          tools=".build/artifacts/sparkle/Sparkle/bin"
-          "${tools}/generate_keys" \
-            --account cursor-quota-release \
-            -f "${private_key}" >/dev/null
-          derived_public_key="$(
-            "${tools}/generate_keys" --account cursor-quota-release -p
-          )"
-          embedded_public_key="$(
-            plutil -extract SUPublicEDKey raw CursorQuota/Info.plist
-          )"
-          [[ "${derived_public_key}" == "${embedded_public_key}" ]] || {
-            echo "SPARKLE_PRIVATE_KEY does not match Info.plist SUPublicEDKey." >&2
-            exit 1
-          }
-
-      - name: Package update archive
+      - name: Package application archive
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          archive="CursorQuota-${version}.zip"
+          archive="CursorQuota-${GITHUB_REF_NAME#v}.zip"
           ditto -c -k --sequesterRsrc --keepParent CursorQuota.app "${archive}"
-          echo "UPDATE_ARCHIVE=${archive}" >> "${GITHUB_ENV}"
+          echo "RELEASE_ARCHIVE=${archive}" >> "${GITHUB_ENV}"
 
       - name: Notarize Developer ID build
         shell: bash
@@ -169,18 +127,15 @@ jobs:
             echo "Ad-hoc build; skipping notarization."
             exit 0
           fi
-          [[ -n "${APPLE_ID:-}" ]]
-          [[ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]
-          [[ -n "${APPLE_TEAM_ID:-}" ]]
-
-          xcrun notarytool submit "${UPDATE_ARCHIVE}" \
+          xcrun notarytool submit "${RELEASE_ARCHIVE}" \
             --apple-id "${APPLE_ID}" \
             --password "${APPLE_APP_SPECIFIC_PASSWORD}" \
             --team-id "${APPLE_TEAM_ID}" \
             --wait
+          # Staple so the download opens without a network round trip.
           xcrun stapler staple CursorQuota.app
-          rm "${UPDATE_ARCHIVE}"
-          ditto -c -k --sequesterRsrc --keepParent CursorQuota.app "${UPDATE_ARCHIVE}"
+          rm "${RELEASE_ARCHIVE}"
+          ditto -c -k --sequesterRsrc --keepParent CursorQuota.app "${RELEASE_ARCHIVE}"
 
       - name: Package debug symbols
         shell: bash
@@ -195,39 +150,6 @@ jobs:
             "${symbols}" \
             "CursorQuota-${GITHUB_REF_NAME#v}.dSYM.zip"
 
-      - name: Generate signed Sparkle appcast
-        shell: bash
-        env:
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          [[ -n "${SPARKLE_PRIVATE_KEY}" ]]
-          mkdir update-feed
-          mv "${UPDATE_ARCHIVE}" update-feed/
-          version="${GITHUB_REF_NAME#v}"
-          notes="CursorQuota-${version}.md"
-          gh api \
-            --method POST \
-            "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-            -f "tag_name=${GITHUB_REF_NAME}" \
-            --jq .body > "update-feed/${notes}"
-          tools=".build/artifacts/sparkle/Sparkle/bin"
-          printf '%s' "${SPARKLE_PRIVATE_KEY}" |
-            "${tools}/generate_appcast" \
-              --ed-key-file - \
-              --download-url-prefix \
-                "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/" \
-              --full-release-notes-url \
-                "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}" \
-              --embed-release-notes \
-              --maximum-versions 1 \
-              --maximum-deltas 0 \
-              update-feed
-          mv "update-feed/${UPDATE_ARCHIVE}" .
-          mv update-feed/appcast.xml .
-          mv "update-feed/${notes}" release-notes.md
-
       - name: Publish GitHub release
         shell: bash
         env:
@@ -237,37 +159,19 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           symbols="CursorQuota-${tag#v}.dSYM.zip"
 
+          # Create as a draft so a partial upload is never downloadable. A rerun
+          # against an already-published release replaces assets in place rather
+          # than unpublishing it, which would 404 the existing download URLs.
           if ! gh release view "${tag}" >/dev/null 2>&1; then
             gh release create "${tag}" \
               --draft \
               --verify-tag \
-              --notes-file release-notes.md \
-              --title "CursorQuota ${tag#v}"
-          else
-            gh release edit "${tag}" \
-              --draft \
-              --notes-file release-notes.md \
+              --generate-notes \
               --title "CursorQuota ${tag#v}"
           fi
 
-          # Upload the feed last so it never points at an absent archive.
-          gh release upload "${tag}" "${UPDATE_ARCHIVE}" "${symbols}" --clobber
-          gh release upload "${tag}" appcast.xml --clobber
-
-          assets="$(
-            gh release view "${tag}" \
-              --json assets \
-              --jq '[.assets[].name] | sort | join(\"\\n\")'
-          )"
-          for required in "${UPDATE_ARCHIVE}" "${symbols}" appcast.xml; do
-            printf '%s\n' "${assets}" | awk -v expected="${required}" '
-              $0 == expected { found = 1 }
-              END { exit !found }
-            '
-          done
-
+          gh release upload "${tag}" "${RELEASE_ARCHIVE}" "${symbols}" --clobber
           gh release edit "${tag}" --draft=false --latest
 
           base="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download"
-          curl -fsIL --retry 8 --retry-delay 5 "${base}/appcast.xml"
-          curl -fsIL --retry 8 --retry-delay 5 "${base}/${UPDATE_ARCHIVE}"
+          curl -fsIL --retry 8 --retry-delay 5 "${base}/${RELEASE_ARCHIVE}" >/dev/null

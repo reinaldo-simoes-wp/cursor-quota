@@ -13,32 +13,22 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
+
       - name: Build and package
         run: ./scripts/build-app.sh
-      - name: Verify universal binary
-        shell: bash
-        run: |
-          set -euo pipefail
-          binary="CursorQuota.app/Contents/MacOS/CursorQuota"
-          sparkle="CursorQuota.app/Contents/Frameworks/Sparkle.framework/Versions/B"
-          lipo "${binary}" -verify_arch arm64 x86_64
-          lipo "${sparkle}/Sparkle" -verify_arch arm64 x86_64
-          lipo "${sparkle}/Autoupdate" -verify_arch arm64 x86_64
-          otool -L "${binary}" | grep -q Sparkle.framework
-          test -d CursorQuota.app/Contents/Frameworks/Sparkle.framework
-          codesign --verify --deep --strict --verbose=2 CursorQuota.app
 
-      - name: Verify release inputs
+      - name: Verify application bundle
         shell: bash
         run: |
           set -euo pipefail
           plutil -lint CursorQuota/Info.plist
-          test -n "$(plutil -extract SUPublicEDKey raw CursorQuota/Info.plist)"
-          feed="$(plutil -extract SUFeedURL raw CursorQuota/Info.plist)"
-          [[ "${feed}" == https://*/appcast.xml ]]
-          test -x .build/artifacts/sparkle/Sparkle/bin/generate_appcast
+          lipo CursorQuota.app/Contents/MacOS/CursorQuota -verify_arch arm64 x86_64
+          codesign --verify --strict --verbose=2 CursorQuota.app
 
-          version="$(plutil -extract CFBundleVersion raw CursorQuota/Info.plist)"
-          archive="CursorQuota-${version}.zip"
-          ditto -c -k --sequesterRsrc --keepParent CursorQuota.app "${archive}"
-          unzip -t "${archive}"
+      - name: Verify release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(plutil -extract CFBundleShortVersionString raw CursorQuota/Info.plist)"
+          ditto -c -k --sequesterRsrc --keepParent CursorQuota.app "CursorQuota-${version}.zip"
+          unzip -t "CursorQuota-${version}.zip"

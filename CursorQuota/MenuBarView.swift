@@ -2,7 +2,6 @@ import SwiftUI
 
 struct MenuBarView: View {
     @ObservedObject var appState: AppState
-    @ObservedObject var updateController: UpdateController
 
     var body: some View {
         Group {
@@ -11,8 +10,6 @@ struct MenuBarView: View {
                 Button("Refresh now") { appState.refreshNow() }
                 Divider()
                 Button("Open Cursor dashboard") { openURL(AppConstants.dashboardURL) }
-                Button("Check for Updates…") { updateController.checkForUpdates() }
-                    .disabled(!updateController.canCheckForUpdates)
                 // Without this the app cannot be quit while stuck on a token error.
                 Button("Quit CursorQuota") { NSApplication.shared.terminate(nil) }
             } else {
@@ -51,11 +48,6 @@ struct MenuBarView: View {
             openURL(AppConstants.dashboardURL)
         }
 
-        Button("Check for Updates…") {
-            updateController.checkForUpdates()
-        }
-        .disabled(!updateController.canCheckForUpdates)
-
         Button("Quit CursorQuota") {
             NSApplication.shared.terminate(nil)
         }
@@ -66,6 +58,8 @@ struct MenuBarView: View {
             Text("Inspired by claude-quota")
             Divider()
             Button("GitHub") { openURL(AppConstants.repoURL) }
+            // The app never updates itself, so give the download one click.
+            Button("Latest release") { openURL("\(AppConstants.repoURL)/releases/latest") }
             Button("Report an issue") { openURL("\(AppConstants.repoURL)/issues") }
             Divider()
             Text("Uses Cursor's undocumented dashboard API — may break without notice")
