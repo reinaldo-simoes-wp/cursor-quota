@@ -10,12 +10,12 @@ struct CursorQuotaApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarView(appState: appState)
+            PopoverView(appState: appState)
         } label: {
             gaugeLabel
                 .id(labelIdentity)
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
     }
 
     @ViewBuilder

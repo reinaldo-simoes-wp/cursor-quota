@@ -22,6 +22,8 @@ enum AppConstants {
     static let loadingPhaseStep: Double = 0.55
     /// Columns in the menu bar glyph, and therefore buckets in the trend sparkline.
     static let trendBuckets = 5
+    /// Dot heights a bucket's spend is scaled onto; the panel stretches this range.
+    static let trendLevelSteps = 5
 
     static let stateDB = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb")
@@ -37,6 +39,7 @@ enum AppConstants {
 
 enum PeriodKey: String, CaseIterable, Identifiable {
     case daily, weekly, monthly
+    case threeMonths = "3months"
     case sixMonths = "6months"
     case oneYear = "1year"
 
@@ -47,6 +50,7 @@ enum PeriodKey: String, CaseIterable, Identifiable {
         case .daily: "Daily"
         case .weekly: "Weekly"
         case .monthly: "Monthly"
+        case .threeMonths: "3 Months"
         case .sixMonths: "6 Months"
         case .oneYear: "1 Year"
         }
@@ -57,6 +61,7 @@ enum PeriodKey: String, CaseIterable, Identifiable {
         case .daily: 1
         case .weekly: 7
         case .monthly: 30
+        case .threeMonths: 91
         case .sixMonths: 182
         case .oneYear: 365
         }
@@ -71,23 +76,33 @@ enum ScopeKey: String, CaseIterable, Identifiable {
     static let `default`: ScopeKey = .you
 }
 
+/// The single figure the panel and the menu bar lead with.
 enum DisplayKey: String, CaseIterable, Identifiable {
-    case total, costHr = "cost_hr", costMin = "cost_min"
-    case tokHr = "tok_hr", tokMin = "tok_min"
+    case cost, tokens
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .total: "Total ($ · tokens)"
-        case .costHr: "$ / hour"
-        case .costMin: "$ / minute"
-        case .tokHr: "tokens / hour"
-        case .tokMin: "tokens / minute"
+        case .cost: "$"
+        case .tokens: "Tokens"
         }
     }
 
-    static let `default`: DisplayKey = .total
+    /// A spend ceiling only applies to the dollar figure.
+    var showsCeiling: Bool { self == .cost }
+
+    static let `default`: DisplayKey = .cost
+
+    /// Maps the pre-2.1 display values, which also encoded rate windows.
+    static func fromStoredValue(_ raw: String) -> DisplayKey? {
+        if let key = DisplayKey(rawValue: raw) { return key }
+        switch raw {
+        case "total", "cost_hr", "cost_min": return .cost
+        case "tok_hr", "tok_min": return .tokens
+        default: return nil
+        }
+    }
 }
 
 struct StatusGauge: Equatable, Hashable {
@@ -110,6 +125,7 @@ enum LimitPresets {
         .daily: [25, 50, 100, 250, 500, 1000],
         .weekly: [100, 250, 500, 1000, 2500, 5000],
         .monthly: [500, 1000, 2500, 5000, 10000, 25000],
+        .threeMonths: [1000, 2500, 5000, 10000, 25000, 50000],
         .sixMonths: [2500, 5000, 10000, 25000, 50000, 75000],
         .oneYear: [5000, 10000, 25000, 50000, 75000, 100000],
     ]

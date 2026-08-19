@@ -104,18 +104,10 @@ enum UsageMerge {
         let fill = inWindow.filter { eventTimestamp($0) >= fillStart }
         if fill.isEmpty { return agg }
 
-        var fillUsage = usageFromEvents(fill)
-        fillUsage.aggregations = [
-            ModelAggregation(
-                modelIntent: "recent (last \(AppConstants.fillLagDays) days)",
-                totalCents: fillUsage.totalCostCents,
-                inputTokens: fillUsage.totalInputTokens,
-                outputTokens: fillUsage.totalOutputTokens,
-                cacheWriteTokens: fillUsage.totalCacheWriteTokens,
-                cacheReadTokens: fillUsage.totalCacheReadTokens
-            ),
-        ]
-        return mergeUsage(agg, fillUsage)
+        // The fill window is shorter than the aggregate lag, so these events cannot
+        // also be in `agg` — the event log's own model names merge into the
+        // aggregate's rows without double counting.
+        return mergeUsage(agg, usageFromEvents(fill))
     }
 
     private static func intValue(_ value: Any?) -> Int {

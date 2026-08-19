@@ -75,6 +75,8 @@ DEFAULT_SCOPE = "you"
 # window duration (an average over the period).
 DISPLAYS = {
     "total": "Total ($ \u00b7 tokens)",
+    "cost": "Cost only ($)",
+    "tokens": "Tokens only",
     "cost_hr": "$ / hour",
     "cost_min": "$ / minute",
     "tok_hr": "tokens / hour",
@@ -743,7 +745,9 @@ def main():
     if selected in results:
         d = results[selected]
         params = {}
-        if display == "total":
+        if display == "tokens":
+            line(fmt_tokens(io_tokens(d)))
+        elif display in ("total", "cost"):
             cost_cents = d.get("totalCostCents") or 0
             cost = fmt_cost(cost_cents)
             limit = limits.get((scope, selected))
@@ -752,7 +756,8 @@ def main():
                 color = limit_color(cost_cents / limit)
                 if color:
                     params["color"] = color
-            line(f"{cost} · {fmt_tokens(io_tokens(d))}", **params)
+            text = cost if display == "cost" else f"{cost} · {fmt_tokens(io_tokens(d))}"
+            line(text, **params)
         else:
             # Rate modes: no limit comparison (limits are totals).
             line(rate_value(d, display, days))

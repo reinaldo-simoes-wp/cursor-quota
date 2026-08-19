@@ -18,7 +18,11 @@ enum ConfigStore {
     }
 
     static func readDisplay() -> DisplayKey {
-        readKey(from: AppConstants.displayFile, valid: DisplayKey.self, default: .default)
+        guard let contents = try? String(contentsOf: AppConstants.displayFile, encoding: .utf8) else {
+            return .default
+        }
+        let raw = contents.trimmingCharacters(in: .whitespacesAndNewlines)
+        return DisplayKey.fromStoredValue(raw) ?? .default
     }
 
     static func writeDisplay(_ key: DisplayKey) {

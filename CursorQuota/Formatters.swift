@@ -41,20 +41,15 @@ enum Formatters {
         return String(format: "$%.4f", dollars)
     }
 
-    static func rateValue(data: UsageData, display: DisplayKey, days: Int) -> String {
+    /// Average burn rate over the period, shown alongside the headline figure.
+    static func ratePerHour(data: UsageData, display: DisplayKey, days: Int) -> String {
         let hours = Double(days * 24)
-        let minutes = Double(days * 1440)
+        guard hours > 0 else { return "" }
         switch display {
-        case .costHr:
+        case .cost:
             return "\(rateCost(dollars: Double(data.totalCostCents) / 100.0 / hours))/hr"
-        case .costMin:
-            return "\(rateCost(dollars: Double(data.totalCostCents) / 100.0 / minutes))/min"
-        case .tokHr:
+        case .tokens:
             return "\(tokens(Int(Double(data.ioTokens()) / hours)))/hr"
-        case .tokMin:
-            return "\(tokens(Int(Double(data.ioTokens()) / minutes)))/min"
-        case .total:
-            return ""
         }
     }
 
@@ -65,3 +60,4 @@ enum Formatters {
         return String(format: "$%.2f", value)
     }
 }
+

@@ -7,6 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREVIEW="/tmp/cursor-quota-preview.swift"
 
 cat "${ROOT}/CursorQuota/AppConstants.swift" \
+    "${ROOT}/CursorQuota/DottedGraphGlyph.swift" \
     "${ROOT}/CursorQuota/GaugeLabelView.swift" > "${PREVIEW}"
 
 cat >> "${PREVIEW}" <<'SWIFT'

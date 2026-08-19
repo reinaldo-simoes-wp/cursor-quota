@@ -4,26 +4,27 @@ Menu bar gauge for your Cursor token usage and spend — inspired by
 [claude-quota](https://github.com/grzegorz-raczek-unit8/claude-quota), but for
 [Cursor](https://cursor.com).
 
-- The menu bar shows the selected period's **spend and tokens**, e.g.
-  `$4.12 · 1.2M` (tokens = input + output; cache tokens are in the dropdown).
-- The dropdown lists **all periods** — Daily, Weekly, Monthly, 6 Months,
-  1 Year — each with cost and tokens. **Click a period to make it the
-  menu bar gauge.**
-- A **Display** submenu switches what the menu bar shows for the selected
-  period: `Total ($ · tokens)` (default), `$ / hour`, `$ / minute`,
-  `tokens / hour`, or `tokens / minute`. Rates are the period's average
-  (total ÷ window), so `Daily` gives the most current rate and longer
-  periods give long-run averages.
-- Below that, a **per-model breakdown** for the selected period: cost,
-  input+output tokens, and cache tokens.
+- The menu bar shows the selected period's **spend or tokens** — `$4.12` or
+  `1.2M` (tokens = input + output; cache tokens are in the panel).
+- Click the menu bar item to open a **visual usage panel** — a compact
+  instrument-style dashboard with a hero spend readout, period pills, a dotted
+  spend-trend landscape, and per-model mix bars.
+- The panel lists **all periods** — Daily, Weekly, Monthly, 3 Months,
+  6 Months, 1 Year. **Click a period pill to make it the menu bar gauge**
+  (the panel stays open). A `$` / `Tokens` control in the header drives the
+  hero, the pill subtitles, and the menu bar together. The unused figure and
+  the period's average hourly rate sit on the hero's secondary line.
+- A **per-model breakdown** for the selected period: cost,
+  input+output tokens, and cache tokens, shown as dotted proportional bars.
 - Optional **spend ceilings** per period, just for visibility: the menu bar
   shows `$237/$250` and turns orange at 70% and red at 90% of the ceiling.
-- A **dot-matrix sparkline** sits left of the numbers, showing the selected
-  period's spend split into five equal buckets — so you can see at a glance
-  whether usage is ramping up or tailing off. It animates as a travelling
-  wave while a refresh is in flight, and takes the same orange/red tint as
-  the gauge when a ceiling is set.
-- Refreshes every 5 minutes plus a manual "Refresh now" entry.
+  The panel shows a ceiling arc on the hero readout; tap it for presets.
+- A **dot-matrix sparkline** sits left of the menu bar numbers and is drawn
+  larger in the panel, showing the selected period's spend split into five
+  equal buckets — so you can see at a glance whether usage is ramping up or
+  tailing off. It animates as a travelling wave while a refresh is in flight,
+  and takes the same orange/red tint as the gauge when a ceiling is set.
+- Refreshes every 5 minutes plus a manual **Refresh** button in the panel.
 
 **macOS only** — native menu bar app (macOS 13+). No SwiftBar required.
 
@@ -71,7 +72,7 @@ dashboard](https://cursor.com/dashboard/usage) uses
 passwords, no scraping, no third-party services.
 
 Periods are rolling windows ending now: last 24 hours, 7 days, 30 days,
-182 days, and 365 days. Long windows that span Cursor's backend shard
+91 days, 182 days, and 365 days. Long windows that span Cursor's backend shard
 boundaries are split automatically and merged client-side (the API requires
 it). Cursor's aggregate totals lag about five days, so a rolling 24-hour
 window comes back empty; the app fills that gap (and the recent tail of
@@ -82,22 +83,22 @@ longer periods) from the usage-event log.
 
 > **Personal vs team usage:** the app always requests **your own usage**
 > explicitly (even for team admins, whose dashboard defaults to team-wide
-> data). Team admins additionally get a **Scope toggle** in the dropdown —
-> `You` vs `Team (TeamName)` — to flip the gauges between personal and
+> data). Team admins additionally get a **Scope** segmented control in the
+> panel — `You` vs `Team (TeamName)` — to flip the gauges between personal and
 > team-wide numbers. Members don't get the toggle because the API restricts
-> team-wide usage to admins. The dropdown header always says which scope is
+> team-wide usage to admins. The panel header always says which scope is
 > shown: `Cursor usage (yours)` or `Cursor team usage (TeamName)`.
 
 ## Spend ceilings (optional)
 
 Dollar ceilings per period — purely visual, nothing is enforced. Set them from
-the **Limits** submenu in the dropdown: each scope+period has preset amounts
-scaled to the cadence (daily $25–$1k up to 1-year $5k–$100k; team presets are
-double) and an `Off` entry. Ceilings are kept **per scope**: `You` and — for
-team admins — `Team (name)` have independent values.
+the **Spend ceiling** section in the panel (or tap the hero arc when a ceiling
+is active): preset amounts scaled to the cadence (daily $25–$1k up to 1-year
+$5k–$100k; team presets are double) and an `Off` entry. Ceilings are kept **per
+scope**: `You` and — for team admins — `Team (name)` have independent values.
 
-Periods with a ceiling show `$X.XX/$LIMIT` in the menu bar and `N% of $LIMIT`
-in the dropdown, colored orange at ≥70% and red at ≥90%.
+Periods with a ceiling show `$X.XX/$LIMIT` in the menu bar and a percentage
+arc in the panel, colored orange at ≥70% and red at ≥90%.
 
 Under the hood they live in `~/.config/cursor-quota/limits`, one
 `<scope> <period> <dollars>` per line (`#` comment lines allowed; legacy
@@ -127,10 +128,10 @@ put a token in `~/.config/cursor-quota/token` — either:
 
 | Path | Purpose |
 | --- | --- |
-| `~/.config/cursor-quota/period` | Selected menu bar period (`daily`, `weekly`, `monthly`, `6months`, `1year`) |
+| `~/.config/cursor-quota/period` | Selected menu bar period (`daily`, `weekly`, `monthly`, `3months`, `6months`, `1year`) |
 | `~/.config/cursor-quota/scope` | Selected scope (`you` or `team`; `team` is admins-only) |
-| `~/.config/cursor-quota/display` | Menu bar display mode (`total`, `cost_hr`, `cost_min`, `tok_hr`, `tok_min`) |
-| `~/.config/cursor-quota/limits` | Optional spend ceilings per scope+period (visibility only, editable from the Limits submenu) |
+| `~/.config/cursor-quota/display` | Menu bar figure (`cost` or `tokens`; older values such as `total` and `cost_hr` still load) |
+| `~/.config/cursor-quota/limits` | Optional spend ceilings per scope+period (visibility only, editable from the panel) |
 | `~/.config/cursor-quota/token` | Optional manual token override |
 
 ## Trend sparkline
@@ -160,8 +161,8 @@ drawing the failure as a dip. The baseline also shows while a token error is
 displayed. On launch you get the loading wave rather than the baseline,
 because the first refresh starts immediately.
 
-The sparkline picks up the ceiling tint in the default `Total ($ · tokens)`
-display. Rate displays never color the gauge, since a ceiling is a total.
+The sparkline picks up the ceiling tint in `$` mode. `Tokens` mode never
+colors the gauge, since a ceiling is a dollar total.
 
 ## Building from source
 
@@ -176,6 +177,7 @@ Two helper scripts support the menu bar UI:
 | --- | --- |
 | `scripts/make-icon.swift` | Composites `assets/icon-source.png` onto the macOS icon grid and runs `iconutil` to write `CursorQuota/AppIcon.icns`. Run from the repo root. |
 | `scripts/preview-menubar.sh` | Renders the menu bar label (trend sparkline, ceiling colors, loading frames) to `/tmp/menubar-preview.png` without needing screen-recording permission |
+| `scripts/preview-popover.sh` | Renders the usage panel to `/tmp/popover-preview.png` with sample fixture data |
 
 `AppIcon.icns` lives in the repo, so a normal build does not regenerate it —
 only rerun `make-icon.swift` after changing the source art.
@@ -226,7 +228,7 @@ use the native app. If you still have the SwiftBar plugin symlinked in
 - **⚠ in the menu bar** — token missing or expired. Open the Cursor app once
   (it refreshes the token) and hit "Refresh now".
 - **⚠ with an HTTP 401 message** — same cause: stale token, re-login in Cursor.
-  A 401 on any period is treated as a session failure, so the whole dropdown
+  A 401 on any period is treated as a session failure, so the whole panel
   switches to the error state rather than showing one bad row.
 - **Daily shows $0.00 · 0** — Cursor's aggregate usage API lags about five
   days, so a rolling 24h query returns empty. The app fills that from the
