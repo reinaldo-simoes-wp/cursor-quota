@@ -62,6 +62,8 @@ struct HeroSpendView: View {
         } label: {
             CeilingArc(percent: pct, color: tint)
                 .frame(width: 54, height: 54)
+                // The arc is a stroke around empty space, which takes no hits of its own.
+                .contentShape(Circle())
                 .help("Spend ceiling — tap for presets")
         }
         .menuStyle(.borderlessButton)

@@ -20,7 +20,11 @@ struct ModelMixView: View {
                 } else {
                     let shown = Array(aggs.prefix(PopoverTheme.maxModelRows))
                     ForEach(shown, id: \.modelIntent) { agg in
-                        modelRow(agg, totalCents: max(data.totalCostCents, 1))
+                        ModelRow(
+                            appState: appState,
+                            agg: agg,
+                            totalCents: max(data.totalCostCents, 1)
+                        )
                     }
 
                     if aggs.count > shown.count {
@@ -40,9 +44,16 @@ struct ModelMixView: View {
             }
         }
     }
+}
 
-    @ViewBuilder
-    private func modelRow(_ agg: ModelAggregation, totalCents: Int) -> some View {
+private struct ModelRow: View {
+    @ObservedObject var appState: AppState
+    let agg: ModelAggregation
+    let totalCents: Int
+
+    @State private var isHovering = false
+
+    var body: some View {
         let io = agg.inputTokens + agg.outputTokens
         let cache = agg.cacheReadTokens + agg.cacheWriteTokens
         let fraction = Double(agg.totalCents) / Double(totalCents)
@@ -83,15 +94,26 @@ struct ModelMixView: View {
                 .minimumScaleFactor(0.8)
                 .foregroundStyle(selected ? Color.accentColor.opacity(0.9) : .secondary.opacity(0.65))
             }
-            .padding(.vertical, 3)
+            .padding(.vertical, 4)
             .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(selected ? Color.accentColor.opacity(0.1) : Color.clear)
+                    .fill(rowFill(selected: selected))
             }
+            // Text and Canvas only take hits on their glyphs, so the row needs its own shape.
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(PopoverTheme.valueAnimation, value: isHovering)
         .help(selected ? "Clear highlight" : "Highlight \(agg.modelIntent) in the trend")
+    }
+
+    /// Rows are otherwise indistinguishable from copy, so hover marks them as controls.
+    private func rowFill(selected: Bool) -> Color {
+        if selected { return Color.accentColor.opacity(isHovering ? 0.16 : 0.1) }
+        return isHovering ? Color.secondary.opacity(0.12) : .clear
     }
 }
 

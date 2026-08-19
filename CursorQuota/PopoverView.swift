@@ -16,7 +16,10 @@ struct PopoverView: View {
         .onAppear {
             // Menu-bar extra windows are often non-key; activation keeps nested menus usable.
             NSApp.activate(ignoringOtherApps: true)
+            // A highlight is a transient reading aid, so every open starts unfiltered.
+            appState.selectedModel = nil
         }
+        .onDisappear { appState.selectedModel = nil }
     }
 
     /// Laid out at its intrinsic height: a menu bar window sizes itself from the
