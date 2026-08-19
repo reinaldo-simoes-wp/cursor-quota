@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and package
+        run: ./scripts/build-app.sh
+      - name: Verify universal binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="CursorQuota.app/Contents/MacOS/CursorQuota"
+          sparkle="CursorQuota.app/Contents/Frameworks/Sparkle.framework/Versions/B"
+          lipo "${binary}" -verify_arch arm64 x86_64
+          lipo "${sparkle}/Sparkle" -verify_arch arm64 x86_64
+          lipo "${sparkle}/Autoupdate" -verify_arch arm64 x86_64
+          otool -L "${binary}" | grep -q Sparkle.framework
+          test -d CursorQuota.app/Contents/Frameworks/Sparkle.framework
+          codesign --verify --deep --strict --verbose=2 CursorQuota.app
+
+      - name: Verify release inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          plutil -lint CursorQuota/Info.plist
+          test -n "$(plutil -extract SUPublicEDKey raw CursorQuota/Info.plist)"
+          feed="$(plutil -extract SUFeedURL raw CursorQuota/Info.plist)"
+          [[ "${feed}" == https://*/appcast.xml ]]
+          test -x .build/artifacts/sparkle/Sparkle/bin/generate_appcast
+
+          version="$(plutil -extract CFBundleVersion raw CursorQuota/Info.plist)"
+          archive="CursorQuota-${version}.zip"
+          ditto -c -k --sequesterRsrc --keepParent CursorQuota.app "${archive}"
+          unzip -t "${archive}"

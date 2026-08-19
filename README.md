@@ -18,19 +18,24 @@ Menu bar gauge for your Cursor token usage and spend — inspired by
   input+output tokens, and cache tokens.
 - Optional **spend ceilings** per period, just for visibility: the menu bar
   shows `$237/$250` and turns orange at 70% and red at 90% of the ceiling.
-- Refreshes every 5 minutes (SwiftBar filename convention) plus a manual
-  "Refresh now" entry.
+- A **dot-matrix sparkline** sits left of the numbers, showing the selected
+  period's spend split into five equal buckets — so you can see at a glance
+  whether usage is ramping up or tailing off. It animates as a travelling
+  wave while a refresh is in flight, and takes the same orange/red tint as
+  the gauge when a ceiling is set.
+- Refreshes every 5 minutes plus a manual "Refresh now" entry.
+- Checks GitHub Releases daily for signed updates. Use **Check for Updates…**
+  in the menu to check immediately.
 
-**macOS only** — it's a [SwiftBar](https://github.com/swiftbar/SwiftBar)
-plugin, same as the original.
+**macOS only** — native menu bar app (macOS 13+). No SwiftBar required.
 
 ## Quick install
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/reinaldo-simoes-wp/cursor-quota/main/install.sh | bash
-```
+Download `CursorQuota-<version>.zip` from the
+[latest release](https://github.com/reinaldo-simoes-wp/cursor-quota/releases/latest),
+move `CursorQuota.app` to `/Applications`, and open it.
 
-## Install from a checkout
+To build from a checkout instead (requires Xcode Command Line Tools / Swift):
 
 ```sh
 git clone https://github.com/reinaldo-simoes-wp/cursor-quota.git
@@ -38,13 +43,12 @@ cd cursor-quota
 ./install.sh
 ```
 
-The installer sets up [SwiftBar](https://github.com/swiftbar/SwiftBar) via
-Homebrew if you don't have it, then symlinks the plugin into your SwiftBar
-plugin folder (`~/.swiftbar` by default).
+This builds `CursorQuota.app`, installs it to `/Applications`, and removes
+any legacy SwiftBar plugin symlink if present.
 
 ## How it works
 
-The plugin reads your Cursor login token from Cursor's local state database
+The app reads your Cursor login token from Cursor's local state database
 (`~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`,
 **read-only** — it never modifies anything, so it can't log you out) and
 queries the same usage endpoints that the [cursor.com usage
@@ -57,13 +61,13 @@ Periods are rolling windows ending now: last 24 hours, 7 days, 30 days,
 182 days, and 365 days. Long windows that span Cursor's backend shard
 boundaries are split automatically and merged client-side (the API requires
 it). Cursor's aggregate totals lag about five days, so a rolling 24-hour
-window comes back empty; the plugin fills that gap (and the recent tail of
+window comes back empty; the app fills that gap (and the recent tail of
 longer periods) from the usage-event log.
 
 > **Note:** the endpoint is internal to Cursor's dashboard and undocumented,
 > so a future Cursor change may require a small fix here.
 
-> **Personal vs team usage:** the plugin always requests **your own usage**
+> **Personal vs team usage:** the app always requests **your own usage**
 > explicitly (even for team admins, whose dashboard defaults to team-wide
 > data). Team admins additionally get a **Scope toggle** in the dropdown —
 > `You` vs `Team (TeamName)` — to flip the gauges between personal and
@@ -116,18 +120,161 @@ put a token in `~/.config/cursor-quota/token` — either:
 | `~/.config/cursor-quota/limits` | Optional spend ceilings per scope+period (visibility only, editable from the Limits submenu) |
 | `~/.config/cursor-quota/token` | Optional manual token override |
 
+## Trend sparkline
+
+The glyph buckets the selected period into five equal slices and scales each
+bucket's spend against the busiest one, so whenever there is any spend the
+tallest column is five dots. If every bucket is zero, all five sit at the
+baseline.
+
+Each bucket is resolved against Cursor's ~5-day aggregate lag rather than
+blindly merged:
+
+| Bucket | Source |
+| --- | --- |
+| Entirely newer than the lag | The usage-event log already in memory — no extra requests |
+| Entirely older than the lag | One aggregate call for that slice |
+| Straddling the boundary | Aggregate before the boundary plus event-log data after it |
+
+So Daily costs nothing extra, and longer periods add at most five parallel
+calls. Switching periods refetches **only** the sparkline (totals for every
+period are already cached) and results are memoized per scope and period, so
+flipping back and forth is free. Changing scope clears the cache.
+
+If any bucket fails — or the usage-event log itself failed, which would make
+recent buckets look empty — the glyph drops to a flat baseline instead of
+drawing the failure as a dip. The baseline also shows while a token error is
+displayed. On launch you get the loading wave rather than the baseline,
+because the first refresh starts immediately.
+
+The sparkline picks up the ceiling tint in the default `Total ($ · tokens)`
+display. Rate displays never color the gauge, since a ceiling is a total.
+
+## Building from source
+
+```sh
+./scripts/build-app.sh   # produces ./CursorQuota.app
+open CursorQuota.app
+```
+
+Two helper scripts support the menu bar UI:
+
+| Script | Purpose |
+| --- | --- |
+| `scripts/make-icon.swift` | Composites `assets/icon-source.png` onto the macOS icon grid and runs `iconutil` to write `CursorQuota/AppIcon.icns`. Run from the repo root. |
+| `scripts/preview-menubar.sh` | Renders the menu bar label (trend sparkline, ceiling colors, loading frames) to `/tmp/menubar-preview.png` without needing screen-recording permission |
+
+`AppIcon.icns` lives in the repo, so a normal build does not regenerate it —
+only rerun `make-icon.swift` after changing the source art.
+
+`build-app.sh` produces a universal Apple Silicon + Intel app, embeds Sparkle,
+signs nested code from the inside out, and verifies the complete bundle.
+Local builds use an ad-hoc signature. Release builds can set
+`CODE_SIGN_IDENTITY` to a Developer ID Application identity.
+
+## Updates and releases
+
+[Sparkle 2](https://sparkle-project.org/) provides in-app updates. The app
+checks once per day, brings scheduled update alerts to the foreground, and
+also exposes **Check for Updates…** in both the normal and token-error menus.
+Updates require user confirmation rather than silently relaunching the app.
+Sparkle only installs archives signed by the Ed25519 public key embedded in
+`Info.plist`; the matching private key is stored as the repository's
+`SPARKLE_PRIVATE_KEY` Actions secret and is never committed.
+
+### One-time Sparkle signing setup
+
+`SPARKLE_PRIVATE_KEY` is required; release publishing fails closed without it.
+Generate a key once with Sparkle's bundled tools:
+
+```sh
+swift package resolve
+tools=.build/artifacts/sparkle/Sparkle/bin
+"$tools/generate_keys" --account cursor-quota
+"$tools/generate_keys" --account cursor-quota -x /secure/path/sparkle-private-key
+gh secret set SPARKLE_PRIVATE_KEY < /secure/path/sparkle-private-key
+```
+
+Copy the public key printed by the first command into `SUPublicEDKey` in
+`CursorQuota/Info.plist`. The committed public key and the private key secret
+must remain a pair or existing installations will reject future updates. Keep
+an offline backup of the private key; losing both the backup and Actions
+secret prevents signing compatible updates. During key rotation, preserve
+either the existing Ed25519 key or the existing Developer ID identity; never
+change both in the same update.
+
+Releases are automated by `.github/workflows/release.yml`:
+
+1. Update both `CFBundleShortVersionString` and `CFBundleVersion` in
+   `CursorQuota/Info.plist`.
+2. Merge and verify CI on `main` (the release workflow enforces both ancestry
+   and a successful completed CI run for the tagged commit).
+3. Create and push a matching tag, for example:
+
+   ```sh
+   git tag v2.0.0
+   git push origin v2.0.0
+   ```
+
+The tag workflow validates the version and signing-key pair, builds a universal
+app, creates a zip, signs the update with Sparkle, embeds generated release
+notes into `appcast.xml`, packages all available dSYMs, and publishes the
+assets through a draft so clients never see a half-uploaded feed. Reruns safely
+replace existing assets. Existing installations read the feed through the
+stable `releases/latest/download/appcast.xml` URL.
+
+Publish the first GitHub release before distributing the updater-enabled app;
+until an `appcast.xml` asset exists, a manual update check correctly reports a
+feed retrieval error. Sparkle updates whichever `.app` bundle is running, so
+use `/Applications/CursorQuota.app` for production rather than opening the
+gitignored build output from the checkout.
+
+Without Apple credentials, the workflow uses ad-hoc macOS code signing plus
+Sparkle's cryptographic archive signature. For a warning-free first install,
+configure these repository secrets; the same workflow then signs with
+Developer ID, submits the archive for notarization, staples the ticket, and
+repackages it before generating the appcast:
+
+- `DEVELOPER_ID_APPLICATION_P12` — base64-encoded Developer ID Application
+  certificate and private key
+- `DEVELOPER_ID_APPLICATION_PASSWORD` — password for that `.p12`
+- `APPLE_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+- `APPLE_TEAM_ID`
+
+## Legacy SwiftBar plugin
+
+[`cursor-quota.5m.py`](cursor-quota.5m.py) is kept for reference. New installs
+use the native app. If you still have the SwiftBar plugin symlinked in
+`~/.swiftbar`, `./install.sh` removes it automatically.
+
 ## Troubleshooting
 
 - **⚠ in the menu bar** — token missing or expired. Open the Cursor app once
   (it refreshes the token) and hit "Refresh now".
-- **HTTP 401 on a period row** — same cause: stale token, re-login in Cursor.
+- **⚠ with an HTTP 401 message** — same cause: stale token, re-login in Cursor.
+  A 401 on any period is treated as a session failure, so the whole dropdown
+  switches to the error state rather than showing one bad row.
 - **Daily shows $0.00 · 0** — Cursor's aggregate usage API lags about five
-  days, so a rolling 24h query returns empty. The plugin fills that from the
+  days, so a rolling 24h query returns empty. The app fills that from the
   usage-event log; hit "Refresh now" after updating. If Daily still shows $0,
   there is no usage in that window (or the event log failed — look for ⚠ on
   the Daily row).
+- **Gatekeeper blocks a source build** — `./install.sh` uses an ad-hoc
+  signature and normally opens fine because it strips quarantine. If you copy
+  that app some other way, right-click it and choose Open the first time.
+- **Gatekeeper blocks a GitHub release** — releases are warning-free only
+  when the repository's Developer ID and notarization secrets are configured.
+  Without them, the archive is still protected for in-app updates by Sparkle's
+  signature, but the first installation may require right-click → Open.
 
 ## Uninstall
 
-Delete `cursor-quota.5m.py` from your SwiftBar plugin folder
-(`~/.swiftbar` by default).
+Quit CursorQuota, then:
+
+```sh
+rm -rf /Applications/CursorQuota.app
+```
+
+Config in `~/.config/cursor-quota/` is left in place unless you remove it
+yourself.
