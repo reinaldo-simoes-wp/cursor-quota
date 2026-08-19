@@ -3,27 +3,38 @@ import SwiftUI
 struct PopoverFooter: View {
     @ObservedObject var appState: AppState
 
+    /// Copy has no destination to point at, so the control says it worked itself.
+    @State private var didCopy = false
+    @State private var copyResetTask: Task<Void, Never>?
+
     var body: some View {
         VStack(spacing: 0) {
             Divider()
 
             HStack(spacing: 6) {
+                // The row has to fit five controls inside the panel's width, so the
+                // three secondary ones are glyphs and only the two that need naming
+                // keep their titles.
                 Button {
                     appState.refreshNow()
                 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                    Image(systemName: "arrow.clockwise")
                         .font(.system(size: 12))
                 }
                 .disabled(appState.isRefreshing)
-                // Buttons share a cramped row, so they keep their width instead of
-                // truncating their titles.
                 .fixedSize()
+                .help("Refresh now")
+                .accessibilityLabel("Refresh")
 
-                Button("Dashboard") {
+                Button {
                     PopoverActions.openURL(AppConstants.dashboardURL)
+                } label: {
+                    Image(systemName: "arrow.up.forward.square")
+                        .font(.system(size: 12))
                 }
-                .font(.system(size: 12))
                 .fixedSize()
+                .help("Open the Cursor dashboard")
+                .accessibilityLabel("Open the Cursor dashboard")
 
                 Menu {
                     Text("cursor-quota v\(AppConstants.version)")
@@ -53,6 +64,28 @@ struct PopoverFooter: View {
 
                 Spacer(minLength: 6)
 
+                Menu {
+                    Button("Copy image") { copyImage() }
+                    Button("Save as PNG…") {
+                        UsageGraphExport.save(
+                            levels: exportLevels,
+                            period: appState.selectedPeriod
+                        )
+                    }
+                } label: {
+                    Label(
+                        didCopy ? "Copied" : "Export",
+                        systemImage: didCopy ? "checkmark" : "square.and.arrow.up"
+                    )
+                    .font(.system(size: 12))
+                }
+                // A refresh leaves the last trend in place, so the artwork stays
+                // exportable while one is in flight. A period with no spend at all
+                // would only draw a bare floor, which is not worth sharing.
+                .disabled(!hasSpendToExport)
+                .fixedSize()
+                .help("Copy or save this trend as artwork")
+
                 Button("Quit") {
                     PopoverActions.quit()
                 }
@@ -62,6 +95,31 @@ struct PopoverFooter: View {
             }
             // Only above the row: the panel's own padding provides the bottom inset.
             .padding(.top, 12)
+        }
+        .onDisappear {
+            copyResetTask?.cancel()
+            didCopy = false
+        }
+    }
+
+    private var exportLevels: [Double] {
+        appState.trendLevels ?? []
+    }
+
+    private var hasSpendToExport: Bool {
+        exportLevels.contains { $0 > 0 }
+    }
+
+    private func copyImage() {
+        guard UsageGraphExport.copyToClipboard(levels: exportLevels) else { return }
+        didCopy = true
+
+        // Each copy owns the confirmation, so an earlier one cannot clear a later one.
+        copyResetTask?.cancel()
+        copyResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard !Task.isCancelled else { return }
+            didCopy = false
         }
     }
 }

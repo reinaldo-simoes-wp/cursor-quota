@@ -26,7 +26,12 @@ Menu bar gauge for your Cursor token usage and spend — inspired by
   vertical marker naming that slice and its spend. It animates as a travelling
   wave while a refresh is in flight, and takes the same orange/red tint as the
   gauge when a ceiling is set.
-- Refreshes every 5 minutes plus a manual **Refresh** button in the panel.
+- **Export**, at the bottom right of the panel, turns the selected period's trend
+  into monochrome dot-matrix artwork in the app icon's style, either **copied to
+  the clipboard** or **saved as a PNG** (1600×900 drawn at 2x, so 3200×1800
+  pixels). It is deliberately aesthetic: the shape is your real usage, but no
+  amounts, token counts, dates, or labels are drawn, so it is safe to share.
+- Refreshes every 5 minutes plus a manual refresh (the ⟳ button in the panel).
 
 **macOS only** — native menu bar app (macOS 13+). No SwiftBar required.
 
@@ -185,13 +190,14 @@ colors the gauge, since a ceiling is a dollar total.
 open CursorQuota.app
 ```
 
-Two helper scripts support the menu bar UI:
+Helper scripts for the icon and for inspecting the UI without screen recording:
 
 | Script | Purpose |
 | --- | --- |
 | `scripts/make-icon.swift` | Composites `assets/icon-source.png` onto the macOS icon grid and runs `iconutil` to write `CursorQuota/AppIcon.icns`. Run from the repo root. |
 | `scripts/preview-menubar.sh` | Renders the menu bar label (trend sparkline, ceiling colors, loading frames) to `/tmp/menubar-preview.png` without needing screen-recording permission |
 | `scripts/preview-popover.sh` | Renders the usage panel to `/tmp/popover-preview.png` with sample fixture data |
+| `scripts/preview-export.sh` | Renders the exported trend artwork to `/tmp/export-preview.png`; takes an optional period key |
 
 `AppIcon.icns` lives in the repo, so a normal build does not regenerate it —
 only rerun `make-icon.swift` after changing the source art.

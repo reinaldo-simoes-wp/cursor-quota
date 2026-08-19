@@ -20,6 +20,7 @@ cat "${ROOT}/CursorQuota/AppConstants.swift" \
     "${ROOT}/CursorQuota/TrendLandscape.swift" \
     "${ROOT}/CursorQuota/ModelMixView.swift" \
     "${ROOT}/CursorQuota/LimitsControl.swift" \
+    "${ROOT}/CursorQuota/UsageGraphExport.swift" \
     "${ROOT}/CursorQuota/PopoverFooter.swift" \
     "${ROOT}/CursorQuota/PopoverView.swift" > "${PREVIEW}"
 
