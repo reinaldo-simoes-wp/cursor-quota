@@ -33,6 +33,8 @@ struct ModelMixView: View {
                         Text("+\(hidden.count) more · \(Formatters.cost(cents: hiddenCents))")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
+                            // Line up with the row text, which sits inside the card inset.
+                            .padding(.horizontal, 6)
                     }
                 }
 
@@ -41,6 +43,7 @@ struct ModelMixView: View {
                     .contentTransition(.numericText())
                     .animation(PopoverTheme.valueAnimation, value: data.cacheTokens())
                     .foregroundStyle(.secondary.opacity(0.65))
+                    .padding(.horizontal, 6)
             }
         }
     }

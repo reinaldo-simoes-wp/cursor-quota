@@ -7,7 +7,7 @@ struct PopoverFooter: View {
         VStack(spacing: 0) {
             Divider()
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Button {
                     appState.refreshNow()
                 } label: {
@@ -15,11 +15,15 @@ struct PopoverFooter: View {
                         .font(.system(size: 12))
                 }
                 .disabled(appState.isRefreshing)
+                // Buttons share a cramped row, so they keep their width instead of
+                // truncating their titles.
+                .fixedSize()
 
                 Button("Dashboard") {
                     PopoverActions.openURL(AppConstants.dashboardURL)
                 }
                 .font(.system(size: 12))
+                .fixedSize()
 
                 Menu {
                     Text("cursor-quota v\(AppConstants.version)")
@@ -41,14 +45,20 @@ struct PopoverFooter: View {
                         .font(.system(size: 13))
                 }
                 .menuStyle(.borderlessButton)
+                // Without this the menu stretches and strands its chevron mid-row.
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("About cursor-quota")
+                .accessibilityLabel("About cursor-quota")
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 6)
 
                 Button("Quit") {
                     PopoverActions.quit()
                 }
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
+                .fixedSize()
             }
             // Only above the row: the panel's own padding provides the bottom inset.
             .padding(.top, 12)

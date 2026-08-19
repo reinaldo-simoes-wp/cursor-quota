@@ -13,24 +13,31 @@ struct LimitsControl: View {
         }
     }
 
+    /// One row: the current ceiling doubles as the control that changes it, which keeps
+    /// this section the same shape as the panel's other headers.
     @ViewBuilder
     private var standaloneSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Spend ceiling")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                Spacer()
+        HStack {
+            Text("Spend ceiling")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            Menu {
+                embeddedPresets
+            } label: {
                 Text(currentLimitLabel)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-
-            Menu("Set limit for \(appState.selectedPeriod.label.lowercased())") {
-                embeddedPresets
-            }
-            .font(.system(size: 12))
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help(ceilingHint)
+            .accessibilityLabel(ceilingHint)
+            .accessibilityValue(currentLimitLabel)
         }
     }
 
@@ -58,6 +65,10 @@ struct LimitsControl: View {
                 }
             }
         }
+    }
+
+    private var ceilingHint: String {
+        "Set the \(appState.selectedPeriod.label.lowercased()) spend ceiling"
     }
 
     private var currentLimitLabel: String {

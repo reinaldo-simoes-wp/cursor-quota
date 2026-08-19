@@ -60,6 +60,9 @@ struct PopoverView: View {
     private var layoutSignature: String {
         let models = appState.results[appState.selectedPeriod]?.aggregations.count ?? -1
         let error = appState.errors[appState.selectedPeriod] ?? ""
+        // The hero arc is a height change of its own, but only its presence matters —
+        // moving between two limit values leaves the layout alone.
+        let arc = appState.display.showsCeiling && appState.limit(for: appState.selectedPeriod) != nil
         return [
             appState.selectedPeriod.rawValue,
             appState.display.rawValue,
@@ -67,6 +70,7 @@ struct PopoverView: View {
             error,
             String(models),
             appState.selectedModel ?? "",
+            arc ? "arc" : "noarc",
         ].joined(separator: "|")
     }
 
